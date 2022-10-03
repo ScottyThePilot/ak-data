@@ -1,5 +1,15 @@
-pub use octocrab::{Octocrab, OctocrabBuilder};
-pub use octocrab::models::AppId;
+//! Options that specify where and how to interpret files as Arknights' game data.
+//! Not applicable when parsing local files.
+//!
+//! Creating gamedata from a remote repository currently uses GitHub's API,
+//! and it's compatible with any other repository hosts right now.
+//!
+//! If you are not using an authorized application to perform the remote requests,
+//! you may run into 403 Forbidden errors due to GitHub ratelimiting you. You can instead
+//! use [`GameData::from_local`][crate::game_data::GameData::from_local] to parse local game files.
+
+#[doc(no_inline)] pub use octocrab;
+#[doc(no_inline)] pub use octocrab::{Octocrab, OctocrabBuilder};
 
 use crate::format::{DataFile, CharacterTable, CharacterMetaTable, BuildingData, ItemTable};
 use crate::game_data::{DataFileInfo, GameData, UpdateInfo};
@@ -16,6 +26,7 @@ use std::str::FromStr;
 #[error("expected one of \"en_US\", \"ja_JP\", \"ko_KR\", \"zh_CN\", or \"zh_TW\"")]
 pub struct ParseRegionError;
 
+/// Represents which region folder to pull files from when grabbing game data from a repository.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Region {
   /// `en_US`
@@ -71,18 +82,21 @@ impl fmt::Display for Region {
   }
 }
 
+/// Options that specify where and how to interpret files as Arknights' game data.
 #[derive(Debug, Clone)]
 pub struct Options {
-  /// The owner (0) and repository (1) of a GitHub repository to grab gamedata from.
+  /// The owner (`0`) and repository (`1`) of a GitHub repository to grab gamedata from.
   pub repository: (String, String),
+  /// The branch of that repository to grab gamedata from.
   pub branch: String,
+  /// The region subfolder of that repository to pull files from.
   pub region: Region,
   /// The octocrab instance used when making API requests to GitHub.
   pub instance: Octocrab
 }
 
 impl Options {
-  /// Defaults to https://github.com/Kengxxiao/ArknightsGameData
+  /// Defaults to <https://github.com/Kengxxiao/ArknightsGameData>
   pub const DEFAULT_REPOSITORY: (&'static str, &'static str) = ("Kengxxiao", "ArknightsGameData");
   /// Defaults to `master`.
   pub const DEFAULT_BRANCH: &'static str = "master";
@@ -147,12 +161,7 @@ impl Options {
 impl Default for Options {
   fn default() -> Self {
     let (owner, repo) = Self::DEFAULT_REPOSITORY;
-    Options {
-      repository: (owner.to_owned(), repo.to_owned()),
-      branch: Self::DEFAULT_BRANCH.to_owned(),
-      region: Region::default(),
-      instance: Octocrab::default()
-    }
+    Options::new(owner, repo)
   }
 }
 

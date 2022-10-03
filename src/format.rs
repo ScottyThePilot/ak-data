@@ -1116,7 +1116,11 @@ impl HandbookStoryEntry {
     ], story_title } = self;
 
     let unlock_condition = unlock_param.into_operator_file_unlock(unlock_type);
-    OperatorFileEntry { story_title, story_text, unlock_condition }
+    OperatorFileEntry {
+      title: story_title,
+      text: story_text,
+      unlock_condition
+    }
   }
 }
 

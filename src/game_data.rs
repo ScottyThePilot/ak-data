@@ -5,7 +5,7 @@
 
 use chrono::{DateTime, Utc};
 use octocrab::models::repos::RepoCommit;
-use uord::UOrd;
+pub use uord::UOrd;
 
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -49,7 +49,7 @@ fn compare_update_info(new: &UpdateInfo, old: &UpdateInfo) -> bool {
   })
 }
 
-/// Encapsulates
+/// Encapsulates game data extracted from Arknights' game files.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GameData {
   /// Lists information about the commit this `GameData` was created from.
@@ -66,19 +66,19 @@ pub struct GameData {
 
 impl GameData {
   /// Tries constructing a [`GameData`] instance from the given path.
-  /// The path should be to the `gamedata` directory of a repository.
+  /// Note that the provided path should go to the `gamedata` folder, not the root folder of the repository.
   pub async fn from_local<P: AsRef<Path>>(path: P) -> Result<Self, crate::Error> {
     let data_files = crate::format::DataFiles::from_local(path.as_ref()).await?;
     Ok(data_files.into_game_data(UpdateInfo::default()))
   }
 
-  /// Tries constructing a `GameData` from a remote GitHub repository.
+  /// Tries constructing a [`GameData`] from a remote GitHub repository.
   /// The [`Options`] instance will dictate which repository to fetch from.
   pub async fn from_remote(options: &Options) -> Result<Self, crate::Error> {
     options.request_game_data().await
   }
 
-  /// Patches this `GameData` if the data it is based on is out of date.
+  /// Patches this [`GameData`] if the data it is based on is out of date.
   /// Replaces `self` and returns it if it was out of date.
   pub async fn patch_from_remote(&mut self, options: &Options) -> Result<Option<Self>, crate::Error> {
     options.patch_game_data(self).await
@@ -116,6 +116,7 @@ impl GameData {
   }
 }
 
+/// An operator.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Operator {
   pub id: String,
@@ -135,7 +136,9 @@ pub struct Operator {
   pub recruitment_tags: Vec<String>,
   /// Ranges from 1 to 6, indicates the number of stars (rarity) of this character.
   pub rarity: NonZeroU8,
+  /// The operator's primary profession.
   pub profession: Profession,
+  /// The operator's secondary sub-profession.
   pub sub_profession: SubProfession,
   /// A list of promotions that this operator can achieve.
   pub promotions: OperatorPromotions,
@@ -151,6 +154,8 @@ pub struct Operator {
   pub operator_file: Option<OperatorFile>
 }
 
+/// Contains information about an operator's three possible promotion phases.
+/// The default (none) promotion, elite level 1, and elite level 2.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorPromotions {
   pub none: OperatorPromotion,
@@ -198,8 +203,7 @@ impl<'a> IntoIterator for &'a OperatorPromotions {
   }
 }
 
-
-
+/// An unlockable promotion level for an operator.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorPromotion {
   pub operator_id: String,
@@ -217,6 +221,7 @@ impl OperatorPromotion {
   }
 }
 
+/// Operator attributes that may be associated with an operator module or an operator promotion.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorAttributes {
   pub level_requirement: u32,
@@ -241,6 +246,7 @@ pub struct OperatorAttributes {
   pub is_frozen_immune: bool
 }
 
+/// An unlockable module for an operator. Currently, no operators have more than one.
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorModule {
@@ -254,6 +260,7 @@ impl OperatorModule {
   }
 }
 
+/// A single 'potential' upgrade level for an operator.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorPotential {
   /// Only two values currently appear:
@@ -263,7 +270,7 @@ pub struct OperatorPotential {
   pub description: String
 }
 
-/// Contains limited information about a skill that belongs to an operator
+/// An operator's skill and all of its upgradeable levels.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorSkill {
   pub id: String,
@@ -285,6 +292,7 @@ impl OperatorSkill {
   }
 }
 
+/// An upgradeable level of an operator's skill.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorSkillLevel {
   pub description: Option<String>,
@@ -297,6 +305,10 @@ pub struct OperatorSkillLevel {
   pub increment: f32
 }
 
+/// An upgradeable mastery level of an operator's skill.
+///
+/// Implements `Deref<Target = OperatorSkillLevel>` so that you can access
+/// the fields of [`OperatorSkillLevel`] directly.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorSkillMastery {
   pub condition: PromotionAndLevel,
@@ -314,23 +326,6 @@ impl Deref for OperatorSkillMastery {
   }
 }
 
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub enum SkillActivation {
-  Passive,
-  Manual,
-  Auto
-}
-
-#[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-pub enum SkillRecovery {
-  Passive,
-  AutoRecovery,
-  OffensiveRecovery,
-  DefensiveRecovery
-}
-
 impl OperatorSkillMastery {
   /// Returns whether or not this mastery's promotion and level requirements have been met
   pub fn is_unlockable(&self, promotion_and_level: PromotionAndLevel) -> bool {
@@ -343,6 +338,27 @@ impl OperatorSkillMastery {
   }
 }
 
+/// The activation mode of an operator's skill.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum SkillActivation {
+  Passive,
+  Manual,
+  Auto
+}
+
+/// The recovery mode of an operator's skill.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum SkillRecovery {
+  Passive,
+  AutoRecovery,
+  OffensiveRecovery,
+  DefensiveRecovery
+}
+
+/// An operator's talent and all of its unlockable phases.
+#[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorTalent {
   pub phases: Vec<OperatorTalentPhase>
@@ -355,6 +371,7 @@ impl OperatorTalent {
   }
 }
 
+/// An unlockable phase of an operator's talent.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorTalentPhase {
   pub name: String,
@@ -380,6 +397,7 @@ impl OperatorTalentPhase {
   }
 }
 
+/// An operator's base skill and all of its unlockable phases.
 #[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorBaseSkill {
@@ -392,6 +410,7 @@ impl OperatorBaseSkill {
   }
 }
 
+/// An unlockable phase of an operator's base skill.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorBaseSkillPhase {
   pub name: String,
@@ -407,6 +426,7 @@ impl OperatorBaseSkillPhase {
   }
 }
 
+/// Represents the promotion level and numeric level of an operator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PromotionAndLevel {
   pub promotion: Promotion,
@@ -428,6 +448,7 @@ impl Ord for PromotionAndLevel {
   }
 }
 
+/// The promotion level of an operator.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Promotion {
@@ -443,6 +464,7 @@ impl Promotion {
   }
 }
 
+/// An operator's primary profession.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Profession {
@@ -456,6 +478,7 @@ pub enum Profession {
   Guard
 }
 
+/// An operator's secondary sub-profession.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SubProfession {
@@ -536,7 +559,7 @@ pub struct Building {
   pub upgrades: Vec<BuildingUpgrade>
 }
 
-/// Represents a potential upgrdade that can be applied to an RIIC base room.
+/// Represents a potential upgrade that can be applied to an RIIC base room.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuildingUpgrade {
   pub unlock_condition: String,
@@ -572,8 +595,7 @@ pub enum BuildingType {
   Corridor
 }
 
-
-
+/// An item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Item {
   pub id: String,
@@ -595,6 +617,7 @@ pub enum ItemClass {
   Other
 }
 
+/// Contains operator file entries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorFile {
   pub id: String,
@@ -604,14 +627,14 @@ pub struct OperatorFile {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorFileEntry {
-  pub story_title: String,
-  pub story_text: String,
+  pub title: String,
+  pub text: String,
   pub unlock_condition: OperatorFileUnlock
 }
 
 impl OperatorFileEntry {
   fn iter_text_lines(&self) -> impl Iterator<Item = &str> + DoubleEndedIterator {
-    self.story_text.lines().map(str::trim).filter(|line| !line.is_empty())
+    self.text.lines().map(str::trim).filter(|line| !line.is_empty())
   }
 
   /// Searches for an entry line based on a bracketed header.
@@ -642,6 +665,7 @@ fn split_text_line(line: &str) -> Option<(&str, &str)> {
   line.strip_prefix("[")?.split_once("] ")
 }
 
+/// The unlock condition associated with an operator file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OperatorFileUnlock {
   AlwaysUnlocked,
@@ -664,6 +688,7 @@ impl OperatorFileUnlock {
   }
 }
 
+/// Iterates over [`Item`]s given a list of item IDs.
 #[derive(Debug, Clone)]
 pub struct ItemsIter<'a> {
   iter: HashMapIter<'a, String, u32>,

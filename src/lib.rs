@@ -1,5 +1,8 @@
 #![warn(missing_debug_implementations, unreachable_pub)]
 
+//! A Rust library for parsing datamined game files from Arknights and
+//! exposing them as easy to understand Rust structures.
+
 extern crate base64;
 extern crate chrono;
 #[macro_use]
