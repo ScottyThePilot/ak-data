@@ -17,7 +17,6 @@ uord = { git = "https://github.com/ScottyThePilot/misc-crates", features = ["ser
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "fs", "macros"] }
-rand = "0.8"
 
 [features]
 default = ["assertions"]
