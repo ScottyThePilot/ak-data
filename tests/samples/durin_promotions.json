@@ -1,0 +1,53 @@
+{
+  "none": {
+    "attack_range_id": "3-6",
+    "min_attributes": {
+      "level": 1,
+      "max_hp": 571,
+      "atk": 238,
+      "def": 36,
+      "magic_resistance": 10.0,
+      "deployment_cost": 12,
+      "block_count": 1,
+      "move_speed": 1.0,
+      "attack_speed": 100.0,
+      "base_attack_time": 1.6,
+      "redeploy_time": 70,
+      "hp_recovery_per_sec": 0.0,
+      "sp_recovery_per_sec": 1.0,
+      "max_deploy_count": 1,
+      "max_deck_stack_count": 0,
+      "taunt_level": 0,
+      "is_stun_immune": false,
+      "is_silence_immune": false,
+      "is_sleep_immune": false,
+      "is_frozen_immune": false
+    },
+    "max_attributes": {
+      "level": 30,
+      "max_hp": 952,
+      "atk": 340,
+      "def": 62,
+      "magic_resistance": 10.0,
+      "deployment_cost": 12,
+      "block_count": 1,
+      "move_speed": 1.0,
+      "attack_speed": 100.0,
+      "base_attack_time": 1.6,
+      "redeploy_time": 70,
+      "hp_recovery_per_sec": 0.0,
+      "sp_recovery_per_sec": 1.0,
+      "max_deploy_count": 1,
+      "max_deck_stack_count": 0,
+      "taunt_level": 0,
+      "is_stun_immune": false,
+      "is_silence_immune": false,
+      "is_sleep_immune": false,
+      "is_frozen_immune": false
+    },
+    "max_level": 30,
+    "upgrade_cost": {}
+  },
+  "elite1": null,
+  "elite2": null
+}

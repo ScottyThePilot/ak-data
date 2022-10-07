@@ -18,7 +18,7 @@ mod format;
 pub mod game_data;
 pub mod options;
 
-pub use crate::game_data::*;
+pub use crate::game_data::GameData;
 pub use crate::options::{Options, Region};
 
 #[derive(Debug, Error)]

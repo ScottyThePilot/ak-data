@@ -196,7 +196,7 @@ impl CharacterTableEntry {
       .map(CharacterTableTalent::into_operator_talent)
       .collect::<Option<_>>()?;
     let base_skills = building_data.get_operator_base_skill(&id);
-    let operator_file = handbook.take_operator_file(&id);
+    let file = handbook.take_operator_file(&id)?;
 
     Some(Operator {
       id,
@@ -220,15 +220,13 @@ impl CharacterTableEntry {
       skills,
       talents,
       base_skills,
-      operator_file
+      file
     })
   }
 }
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct CharacterTablePhase {
-  #[serde(rename = "characterPrefabKey")]
-  character_prefab_key: String,
   #[serde(rename = "rangeId")]
   range_id: Option<String>,
   #[serde(rename = "maxLevel")]
@@ -244,7 +242,6 @@ impl CharacterTablePhase {
   fn into_operator_promotion(self) -> OperatorPromotion {
     let [min_attributes, max_attributes] = self.attributes_key_frames;
     OperatorPromotion {
-      operator_id: self.character_prefab_key,
       attack_range_id: self.range_id,
       min_attributes: min_attributes.into_operator_attributes(),
       max_attributes: max_attributes.into_operator_attributes(),
@@ -269,7 +266,7 @@ impl CharacterTableKeyFrame {
 
   fn into_operator_attributes(self) -> OperatorAttributes {
     OperatorAttributes {
-      level_requirement: self.level,
+      level: self.level,
       max_hp: self.data.max_hp,
       atk: self.data.atk,
       def: self.data.def,
@@ -973,16 +970,40 @@ pub(crate) struct BuildingDataBuff {
   #[serde(rename = "sortId")]
   sort: u32,
   #[serde(rename = "buffCategory")]
-  category: String,
+  category: BuildingDataBuffCategory,
   #[serde(rename = "roomType")]
-  room_type: String
+  room_type: BuildingDataRoomId
 }
 
 impl BuildingDataBuff {
   pub(crate) fn to_operator_base_skill_phase(&self, condition: CharCondition) -> OperatorBaseSkillPhase {
-    let condition = condition.into_promotion_and_level();
-    let BuildingDataBuff { name, sort, category, room_type, .. } = self.clone();
-    OperatorBaseSkillPhase { name, condition, sort, category, room_type }
+    OperatorBaseSkillPhase {
+      name: self.name.clone(),
+      condition: condition.into_promotion_and_level(),
+      sort: self.sort,
+      category: self.category.into_operator_base_skill_category(),
+      building_type: self.room_type.into_building_type()
+    }
+  }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub(crate) enum BuildingDataBuffCategory {
+  #[serde(rename = "FUNCTION")]
+  Function,
+  #[serde(rename = "RECOVERY")]
+  Recovery,
+  #[serde(rename = "OUTPUT")]
+  Output
+}
+
+impl BuildingDataBuffCategory {
+  fn into_operator_base_skill_category(self) -> OperatorBaseSkillCategory {
+    match self {
+      BuildingDataBuffCategory::Function => OperatorBaseSkillCategory::Function,
+      BuildingDataBuffCategory::Recovery => OperatorBaseSkillCategory::Recovery,
+      BuildingDataBuffCategory::Output => OperatorBaseSkillCategory::Output
+    }
   }
 }
 
@@ -1425,17 +1446,8 @@ impl<'de> Deserialize<'de> for SkillTableSkillType {
   }
 }
 
-// spType 1 -> auto recovery
-// spType 2 -> offensive recovery
-// spType 4 -> defensive recovery
-// spType 8 -> passive
-// skillType 0 -> passive
-// skillType 1 -> manual
-// skillType 2 -> auto
-
 static RX_TAG: Lazy<Regex> = Lazy::new(|| Regex::new(r"<[@$\w.]+>|</>").unwrap());
 static RX_TEMPLATE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{[\w:.%\-@\[\]]+\}").unwrap());
-//static RX_TEMPLATE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{[^\n\s>}]+\}").unwrap());
 
 fn strip_tags<'a>(text: &'a str) -> Cow<'a, str> {
   RX_TAG.replace_all(&text, "")

@@ -41,7 +41,7 @@ pub type UpdateInfo = HashMap<String, DataFileInfo>;
 
 /// Returns true if the new update info contains a more recent file entry than the old
 /// update info, or if the new update info contains an entry that the old one is missing.
-fn compare_update_info(new: &UpdateInfo, old: &UpdateInfo) -> bool {
+pub fn compare_update_info(new: &UpdateInfo, old: &UpdateInfo) -> bool {
   new.iter().any(|(id, new_info)| {
     old.get(id).map_or(true, |old_info| {
       new_info.last_updated > old_info.last_updated
@@ -50,6 +50,7 @@ fn compare_update_info(new: &UpdateInfo, old: &UpdateInfo) -> bool {
 }
 
 /// Encapsulates game data extracted from Arknights' game files.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GameData {
   /// Lists information about the commit this `GameData` was created from.
@@ -97,7 +98,7 @@ impl GameData {
       .map(String::as_str)
   }
 
-  /// Searches for an item, given its in-game name.
+  /// Searches for an operator, given their in-game name.
   /// Please remember that names are region dependent!
   pub fn find_operator(&self, operator_name: impl AsRef<str>) -> Option<&Operator> {
     let operator_name = operator_name.as_ref();
@@ -117,24 +118,27 @@ impl GameData {
 }
 
 /// An operator.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Operator {
+  /// This operator's hidden ID.
   pub id: String,
+  /// This operator's name, region dependent.
   pub name: String,
-  /// The nation this character belongs to, region independent. (Example: `"victoria"` for Bagpipe)
+  /// The nation this operator belongs to, region independent. (Example: `"victoria"` for Bagpipe)
   pub nation_id: Option<String>,
-  /// The group this character belongs to, region independent. (Example: `"karlan"` for SilverAsh)
+  /// The group this operator belongs to, region independent. (Example: `"karlan"` for SilverAsh)
   pub group_id: Option<String>,
-  /// The group this character belongs to, region independent. (Example: `"reserve4"` for Adnachiel)
+  /// The group this operator belongs to, region independent. (Example: `"reserve4"` for Adnachiel)
   pub team_id: Option<String>,
-  /// A four-letter code that is displayed in the in-game archive screen. (Example: `"LT77"` for Mostima)
+  /// A three or four letter code that is displayed in the in-game archive screen. (Example: `"LT77"` for Mostima)
   pub display_number: String,
-  /// Appears to be for an 'alternate name' like the Ursus character's cryllic names.
+  /// Appears to be for an 'alternate name' like the Ursus operators' cyrllic names.
   /// (On non-EN regions, the appellation will be the operator's name in latin script)
   pub appellation: Option<String>,
-  /// The recruitment tags for this character, region dependent text.
+  /// The recruitment tags for this operator, region dependent.
   pub recruitment_tags: Vec<String>,
-  /// Ranges from 1 to 6, indicates the number of stars (rarity) of this character.
+  /// Ranges from 1 to 6, indicates the number of stars (rarity) of this operator.
   pub rarity: NonZeroU8,
   /// The operator's primary profession.
   pub profession: Profession,
@@ -148,10 +152,12 @@ pub struct Operator {
   /// Will almost always be length 5.
   /// Exceptions are Savage and any operators without potential.
   pub potential: Vec<OperatorPotential>,
+  /// A list of skills and their upgrade phases that this operator can achieve.
   pub skills: Vec<OperatorSkill>,
+  /// A list of talents and their unlock phases that this operator can achieve.
   pub talents: Vec<OperatorTalent>,
   pub base_skills: Vec<OperatorBaseSkill>,
-  pub operator_file: Option<OperatorFile>
+  pub file: OperatorFile
 }
 
 /// Contains information about an operator's three possible promotion phases.
@@ -164,12 +170,20 @@ pub struct OperatorPromotions {
 }
 
 impl OperatorPromotions {
+  /// Obtains a reference to the respective [`OperatorPromotion`], given a [`Promotion`].
   pub fn get(&self, promotion: Promotion) -> Option<&OperatorPromotion> {
     match promotion {
       Promotion::None => Some(&self.none),
       Promotion::Elite1 => self.elite1.as_ref(),
       Promotion::Elite2 => self.elite2.as_ref()
     }
+  }
+
+  /// Returns the stats of this operator at the given promotion and level.
+  /// (Does not account for stat boosts from talents.)
+  pub fn get_attributes(&self, promotion_and_level: PromotionAndLevel) -> Option<OperatorAttributes> {
+    let PromotionAndLevel { promotion, level } = promotion_and_level;
+    self.get(promotion).map(|promotion| promotion.get_level_attributes(level))
   }
 
   #[inline]
@@ -206,7 +220,6 @@ impl<'a> IntoIterator for &'a OperatorPromotions {
 /// An unlockable promotion level for an operator.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorPromotion {
-  pub operator_id: String,
   pub attack_range_id: Option<String>,
   pub min_attributes: OperatorAttributes,
   pub max_attributes: OperatorAttributes,
@@ -219,12 +232,45 @@ impl OperatorPromotion {
   pub fn iter_upgrade_cost<'a>(&'a self, items: &'a HashMap<String, Item>) -> ItemsIter<'a> {
     ItemsIter::new(&self.upgrade_cost, items)
   }
+
+  pub fn get_level_attributes(&self, level: u32) -> OperatorAttributes {
+    OperatorAttributes {
+      level,
+      max_hp: self.lerp_attribute_u32(level, |attributes| attributes.max_hp),
+      atk: self.lerp_attribute_u32(level, |attributes| attributes.atk),
+      def: self.lerp_attribute_u32(level, |attributes| attributes.def),
+      // no other operator attributes appear to actually change with level
+      ..self.min_attributes
+    }
+  }
+
+  fn level_t(&self, level: u32) -> f32 {
+    let min = self.min_attributes.level;
+    let max = self.max_attributes.level;
+    let level = level.clamp(min, max) as f32;
+    let (min, max) = (min as f32, max as f32);
+    (level - min) / (max - min)
+  }
+
+  fn lerp_attribute_u32<F>(&self, level: u32, f: F) -> u32
+  where F: Fn(&OperatorAttributes) -> u32 {
+    self.lerp_attribute_f32(level, move |a| f(a) as f32).round() as u32
+  }
+
+  fn lerp_attribute_f32<F>(&self, level: u32, f: F) -> f32
+  where F: Fn(&OperatorAttributes) -> f32 {
+    let min = f(&self.min_attributes);
+    let max = f(&self.max_attributes);
+    let t = self.level_t(level);
+    min + (max - min) * t
+  }
 }
 
 /// Operator attributes that may be associated with an operator module or an operator promotion.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorAttributes {
-  pub level_requirement: u32,
+  pub level: u32,
   pub max_hp: u32,
   pub atk: u32,
   pub def: u32,
@@ -256,7 +302,7 @@ pub struct OperatorModule {
 impl OperatorModule {
   /// Returns whether or not this module's promotion and level requirements have been met
   pub fn is_unlockable(&self, promotion_and_level: PromotionAndLevel) -> bool {
-    Promotion::Elite2.with_level(self.attributes.level_requirement) <= promotion_and_level
+    Promotion::Elite2.with_level(self.attributes.level) <= promotion_and_level
   }
 }
 
@@ -416,14 +462,22 @@ pub struct OperatorBaseSkillPhase {
   pub name: String,
   pub condition: PromotionAndLevel,
   pub sort: u32,
-  pub category: String,
-  pub room_type: String
+  pub category: OperatorBaseSkillCategory,
+  pub building_type: BuildingType
 }
 
 impl OperatorBaseSkillPhase {
   pub fn is_unlocked(&self, promotion_and_level: PromotionAndLevel) -> bool {
     self.condition <= promotion_and_level
   }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum OperatorBaseSkillCategory {
+  Function,
+  Recovery,
+  Output
 }
 
 /// Represents the promotion level and numeric level of an operator.
@@ -479,7 +533,10 @@ pub enum Profession {
 }
 
 /// An operator's secondary sub-profession.
+///
+/// This enum is marked as non-exhaustive because Hypergryph may add new sub-professions in the future.
 #[repr(u8)]
+#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum SubProfession {
   // Casters
@@ -641,6 +698,8 @@ impl OperatorFileEntry {
   ///
   /// # Example
   /// ```no_run
+  /// # use ak_data::game_data::GameData;
+  /// # #[tokio::main]
   /// # async fn main() {
   /// #   let game_data = GameData::from_local("gamedata").await.expect("failed to get game data");
   /// #   let fiammeta = game_data.find_operator("Fiammeta").expect("no fiammeta :(");
@@ -734,29 +793,5 @@ impl<'a> Iterator for ItemsIter<'a> {
         None => acc
       }
     })
-  }
-}
-
-#[cfg(test)]
-mod tests {
-  use super::*;
-
-  #[test]
-  fn promotion_and_level_ordering() {
-    let sample = [
-      PromotionAndLevel { promotion: Promotion::None, level: 1 },
-      PromotionAndLevel { promotion: Promotion::None, level: 30 },
-      PromotionAndLevel { promotion: Promotion::Elite1, level: 1 },
-      PromotionAndLevel { promotion: Promotion::Elite1, level: 45 },
-      PromotionAndLevel { promotion: Promotion::Elite1, level: 60 },
-      PromotionAndLevel { promotion: Promotion::Elite2, level: 1 },
-      PromotionAndLevel { promotion: Promotion::Elite2, level: 75 }
-    ];
-
-    for slice in sample.windows(2) {
-      if let [a, b] = slice {
-        assert!(a < b);
-      };
-    };
   }
 }
