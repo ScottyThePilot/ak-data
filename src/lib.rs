@@ -14,6 +14,8 @@ extern crate tokio;
 extern crate uord;
 pub extern crate octocrab;
 
+#[macro_use]
+mod macros;
 mod format;
 pub mod game_data;
 pub mod options;

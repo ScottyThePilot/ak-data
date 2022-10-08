@@ -19,7 +19,8 @@ pub(crate) type DataFilesTuple = (
   SkillTable,
   BuildingData,
   ItemTable,
-  HandbookInfoTable
+  HandbookInfoTable,
+  EquipTable
 );
 
 pub(crate) struct DataFiles {
@@ -28,7 +29,8 @@ pub(crate) struct DataFiles {
   skill_table: SkillTable,
   building_data: BuildingData,
   item_table: ItemTable,
-  handbook_info_table: HandbookInfoTable
+  handbook_info_table: HandbookInfoTable,
+  equip_table: EquipTable
 }
 
 impl DataFiles {
@@ -39,7 +41,8 @@ impl DataFiles {
       crate::options::get_data_file_local::<SkillTable>(gamedata_dir),
       crate::options::get_data_file_local::<BuildingData>(gamedata_dir),
       crate::options::get_data_file_local::<ItemTable>(gamedata_dir),
-      crate::options::get_data_file_local::<HandbookInfoTable>(gamedata_dir)
+      crate::options::get_data_file_local::<HandbookInfoTable>(gamedata_dir),
+      crate::options::get_data_file_local::<EquipTable>(gamedata_dir)
     ).map(Self::from)
   }
 
@@ -50,25 +53,26 @@ impl DataFiles {
       crate::options::get_data_file_remote::<SkillTable>(options),
       crate::options::get_data_file_remote::<BuildingData>(options),
       crate::options::get_data_file_remote::<ItemTable>(options),
-      crate::options::get_data_file_remote::<HandbookInfoTable>(options)
+      crate::options::get_data_file_remote::<HandbookInfoTable>(options),
+      crate::options::get_data_file_remote::<EquipTable>(options)
     ).map(Self::from)
   }
 
-  pub(crate) fn into_game_data(self, update_info: UpdateInfo) -> GameData {
-    let mut handbook = self.handbook_info_table;
+  pub(crate) fn into_game_data(mut self, update_info: UpdateInfo) -> GameData {
+    //let mut handbook = self.handbook_info_table;
     let alters = self.character_meta_table.into_alters();
-    let operators = self.character_table.into_iter()
-      .filter_map(|(id, character)| {
-        let operator = character.into_operator(
-          id.clone(),
-          &self.building_data,
-          &self.skill_table,
-          &mut handbook
-        );
+    let operators = recollect_filter(self.character_table, |(id, character)| {
+      let operator = character.into_operator(
+        id.clone(),
+        &self.building_data,
+        &self.skill_table,
+        &mut self.handbook_info_table,
+        &mut self.equip_table
+      );
 
-        operator.map(|operator| (id, operator))
-      })
-      .collect::<HashMap<String, Operator>>();
+      operator.map(|operator| (id, operator))
+    });
+
     let items = self.item_table.into_items();
     let buildings = self.building_data.into_buildings();
 
@@ -83,14 +87,15 @@ impl DataFiles {
 }
 
 impl From<DataFilesTuple> for DataFiles {
-  fn from((ct, cmt, st, bd, it, hbit): DataFilesTuple) -> Self {
+  fn from((ct, cmt, st, bd, it, hbit, et): DataFilesTuple) -> Self {
     DataFiles {
       character_table: ct,
       character_meta_table: cmt,
       skill_table: st,
       building_data: bd,
       item_table: it,
-      handbook_info_table: hbit
+      handbook_info_table: hbit,
+      equip_table: et
     }
   }
 }
@@ -132,6 +137,9 @@ impl CharacterMetaTable {
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct CharacterTableEntry {
   name: String,
+  #[serde(rename = "potentialItemId")]
+  #[serde(deserialize_with = "deserialize_maybe_empty_str")]
+  potential_item_id: Option<String>,
   #[serde(rename = "nationId")]
   nation_id: Option<String>,
   #[serde(rename = "groupId")]
@@ -140,8 +148,9 @@ pub(crate) struct CharacterTableEntry {
   team_id: Option<String>,
   #[serde(rename = "displayNumber")]
   display_number: Option<String>,
-  #[serde(deserialize_with = "deserialize_appellation")]
+  #[serde(deserialize_with = "deserialize_maybe_empty_str")]
   appellation: Option<String>,
+  position: CharacterTablePosition,
   #[serde(rename = "tagList")]
   #[serde(deserialize_with = "deserialize_or_default")]
   recruitment_tags: Vec<String>,
@@ -153,14 +162,14 @@ pub(crate) struct CharacterTableEntry {
   #[serde(rename = "subProfessionId")]
   sub_profession: CharacterTableSubProfession,
   phases: Vec<CharacterTablePhase>,
-  #[serde(rename = "favorKeyFrames")]
-  #[serde(deserialize_with = "deserialize_or_default")]
-  module_phases: Vec<CharacterTableKeyFrame>,
   skills: Vec<CharacterTableSkill>,
   #[serde(deserialize_with = "deserialize_or_default")]
   talents: Vec<CharacterTableTalent>,
   #[serde(rename = "potentialRanks")]
-  potential_ranks: Vec<CharacterTablePotentialRank>
+  potential_ranks: Vec<CharacterTablePotentialRank>,
+  #[serde(rename = "favorKeyFrames")]
+  #[serde(deserialize_with = "deserialize_maybe_option_array")]
+  favor_key_frames: Option<[CharacterTableKeyFrame; 2]>
 }
 
 impl CharacterTableEntry {
@@ -169,12 +178,14 @@ impl CharacterTableEntry {
     id: String,
     building_data: &BuildingData,
     skill_table: &SkillTable,
-    handbook: &mut HandbookInfoTable
+    handbook_info_table: &mut HandbookInfoTable,
+    equip_table: &mut EquipTable
   ) -> Option<Operator> {
     if self.is_unobtainable { return None };
     let display_number = self.display_number?;
     let profession = self.profession.into_profession()?;
     let sub_profession = self.sub_profession.into_sub_profession()?;
+    let position = self.position.into_position()?;
 
     let mut promotions = self.phases.into_iter()
       .map(CharacterTablePhase::into_operator_promotion);
@@ -182,21 +193,12 @@ impl CharacterTableEntry {
     let promotion_elite1 = promotions.next();
     let promotion_elite2 = promotions.next();
 
-    // skip the first module entry because it's always the default module/badge
-    let modules = self.module_phases.into_iter().skip(1)
-      .map(CharacterTableKeyFrame::into_operator_module)
-      .collect();
-    let potential = self.potential_ranks.into_iter()
-      .map(CharacterTablePotentialRank::into_operator_potential)
-      .collect();
-    let skills = self.skills.into_iter()
-      .map(|character_table_skill| character_table_skill.into_operator_skill(skill_table))
-      .collect::<Option<_>>()?;
-    let talents = self.talents.into_iter()
-      .map(CharacterTableTalent::into_operator_talent)
-      .collect::<Option<_>>()?;
+    let potential = recollect(self.potential_ranks, CharacterTablePotentialRank::into_operator_potential);
+    let skills = recollect_maybe(self.skills, |character_table_skill| character_table_skill.into_operator_skill(skill_table))?;
+    let talents = recollect_maybe(self.talents, CharacterTableTalent::into_operator_talent)?;
+    let modules = equip_table.take_operator_modules(&id).unwrap_or_default();
     let base_skills = building_data.get_operator_base_skill(&id);
-    let file = handbook.take_operator_file(&id)?;
+    let file = handbook_info_table.take_operator_file(&id)?;
 
     Some(Operator {
       id,
@@ -205,6 +207,7 @@ impl CharacterTableEntry {
       group_id: self.group_id,
       team_id: self.team_id,
       display_number,
+      position,
       appellation: self.appellation,
       recruitment_tags: self.recruitment_tags,
       rarity: NonZeroU8::new(self.rarity + 1).unwrap(),
@@ -215,10 +218,11 @@ impl CharacterTableEntry {
         elite1: promotion_elite1,
         elite2: promotion_elite2
       },
-      modules,
+      potential_item: self.potential_item_id,
       potential,
       skills,
       talents,
+      modules,
       base_skills,
       file
     })
@@ -258,12 +262,6 @@ pub(crate) struct CharacterTableKeyFrame {
 }
 
 impl CharacterTableKeyFrame {
-  fn into_operator_module(self) -> OperatorModule {
-    OperatorModule {
-      attributes: self.into_operator_attributes()
-    }
-  }
-
   fn into_operator_attributes(self) -> OperatorAttributes {
     OperatorAttributes {
       level: self.level,
@@ -298,7 +296,7 @@ pub(crate) struct CharacterTableKeyFrameData {
   def: u32,
   #[serde(rename = "magicResistance")]
   magic_resistance: f32,
-  cost: u8,
+  cost: u32,
   #[serde(rename = "blockCnt")]
   block_count: u8,
   #[serde(rename = "moveSpeed")]
@@ -328,6 +326,30 @@ pub(crate) struct CharacterTableKeyFrameData {
   is_sleep_immune: bool,
   #[serde(rename = "frozenImmune")]
   is_frozen_immune: bool,
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, Deserialize)]
+pub(crate) enum CharacterTablePosition {
+  #[serde(rename = "MELEE")]
+  Melee,
+  #[serde(rename = "RANGED")]
+  Ranged,
+  #[serde(rename = "ALL")]
+  All,
+  #[serde(rename = "NONE")]
+  None
+}
+
+impl CharacterTablePosition {
+  fn into_position(self) -> Option<Position> {
+    match self {
+      CharacterTablePosition::Melee => Some(Position::Melee),
+      CharacterTablePosition::Ranged => Some(Position::Ranged),
+      CharacterTablePosition::All => None,
+      CharacterTablePosition::None => None
+    }
+  }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -422,10 +444,9 @@ pub(crate) struct CharacterTableTalent {
 
 impl CharacterTableTalent {
   fn into_operator_talent(self) -> Option<OperatorTalent> {
-    let phases: Vec<OperatorTalentPhase> = self.phases.into_iter()
-      .map(CharacterTableTalentCandidate::into_operator_talent_phase)
-      .collect::<Option<_>>()?;
-    Some(OperatorTalent { phases })
+    Some(OperatorTalent {
+      phases: recollect_maybe(self.phases, CharacterTableTalentCandidate::into_operator_talent_phase)?
+    })
   }
 }
 
@@ -466,7 +487,7 @@ pub(crate) struct CharacterTableTalentBlackboard {
 
 impl CharacterTableTalentBlackboard {
   fn convert(blackboard: Vec<Self>) -> HashMap<String, f32> {
-    blackboard.into_iter().map(|item| (item.key, item.value)).collect()
+    recollect(blackboard, |item| (item.key, item.value))
   }
 }
 
@@ -486,7 +507,7 @@ impl CharacterTablePotentialRank {
 }
 
 #[inline]
-fn deserialize_appellation<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
+fn deserialize_maybe_empty_str<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<String>, D::Error> {
   let value = String::deserialize(deserializer)?;
   Ok(if value.trim().is_empty() { None } else { Some(value) })
 }
@@ -501,6 +522,13 @@ where T: Deserialize<'de> + Default {
 fn deserialize_option_array<'de, D: Deserializer<'de>, const N: usize, T>(deserializer: D) -> Result<Option<[T; N]>, D::Error>
 where T: Deserialize<'de> {
   <Vec<T>>::deserialize(deserializer).map(|v| <[T; N]>::try_from(v).ok())
+}
+
+fn deserialize_maybe_option_array<'de, D: Deserializer<'de>, const N: usize, T>(deserializer: D) -> Result<Option<[T; N]>, D::Error>
+where T: Deserialize<'de> {
+  <Option<Vec<T>>>::deserialize(deserializer).map(|v| {
+    v.and_then(|v| <[T; N]>::try_from(v).ok())
+  })
 }
 
 #[inline]
@@ -518,7 +546,7 @@ pub(crate) struct ItemCost {
 
 impl ItemCost {
   fn convert(item_cost: Vec<Self>) -> HashMap<String, u32> {
-    item_cost.into_iter().map(|item| (item.item_id, item.count)).collect()
+    recollect(item_cost, |item| (item.item_id, item.count))
   }
 }
 
@@ -805,9 +833,7 @@ impl BuildingDataRoom {
       max_count: self.max_count,
       category: self.category,
       size: self.size.into(),
-      upgrades: self.phases.into_iter()
-        .map(BuildingDataRoomPhase::into_building_upgrade)
-        .collect()
+      upgrades: recollect(self.phases, BuildingDataRoomPhase::into_building_upgrade)
     }
   }
 }
@@ -1019,9 +1045,7 @@ pub(crate) struct ItemTable {
 
 impl ItemTable {
   pub(crate) fn into_items(self) -> HashMap<String, Item> {
-    self.items.into_iter()
-      .map(|(id, item)| (id, item.into_item()))
-      .collect()
+    recollect(self.items, |(id, item)| (id, item.into_item()))
   }
 }
 
@@ -1111,14 +1135,10 @@ pub(crate) struct HandbookInfoTableEntry {
 
 impl HandbookInfoTableEntry {
   fn into_operator_file(self) -> OperatorFile {
-    let file_entries = self.story_entries.into_iter()
-      .map(HandbookStoryEntry::into_operator_file_entry)
-      .collect();
-
     OperatorFile {
       id: self.char_id,
       illustrator_name: self.illustrator_name,
-      entries: file_entries
+      entries: recollect(self.story_entries, HandbookStoryEntry::into_operator_file_entry)
     }
   }
 }
@@ -1305,7 +1325,7 @@ impl SkillTableLevel {
 
     OperatorSkillLevel {
       description,
-      range_id: self.range_id,
+      attack_range_id: self.range_id,
       prefab_key: self.prefab_key,
       duration: self.duration,
       max_charge_time: self.sp_data.max_charge_time,
@@ -1373,31 +1393,15 @@ impl SkillTableSpType {
   }
 }
 
-impl<'de> Deserialize<'de> for SkillTableSpType {
-  fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-    struct SkillTableSpTypeVisitor;
-
-    impl<'de> serde::de::Visitor<'de> for SkillTableSpTypeVisitor {
-      type Value = SkillTableSpType;
-
-      #[inline]
-      fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("a positive integer, one of 1, 2, 4 or 8")
-      }
-
-      fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-      where E: serde::de::Error {
-        match v {
-          1 => Ok(SkillTableSpType::AutoRecovery),
-          2 => Ok(SkillTableSpType::OffensiveRecovery),
-          4 => Ok(SkillTableSpType::DefensiveRecovery),
-          8 => Ok(SkillTableSpType::Passive),
-          _ => Err(E::invalid_value(serde::de::Unexpected::Unsigned(v), &Self))
-        }
-      }
-    }
-
-    deserializer.deserialize_u64(SkillTableSpTypeVisitor)
+impl_deserialize_uint_enum! {
+  SkillTableSpType,
+  SkillTableSpTypeVisitor,
+  "a positive integer, one of 1, 2, 4 or 8",
+  match {
+    1 => SkillTableSpType::AutoRecovery,
+    2 => SkillTableSpType::OffensiveRecovery,
+    4 => SkillTableSpType::DefensiveRecovery,
+    8 => SkillTableSpType::Passive
   }
 }
 
@@ -1419,30 +1423,14 @@ impl SkillTableSkillType {
   }
 }
 
-impl<'de> Deserialize<'de> for SkillTableSkillType {
-  fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-    struct SkillTypeVisitor;
-
-    impl<'de> serde::de::Visitor<'de> for SkillTypeVisitor {
-      type Value = SkillTableSkillType;
-
-      #[inline]
-      fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-        formatter.write_str("a positive integer, one of 0, 1, or 2")
-      }
-
-      fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-      where E: serde::de::Error {
-        match v {
-          0 => Ok(SkillTableSkillType::Passive),
-          1 => Ok(SkillTableSkillType::Manual),
-          2 => Ok(SkillTableSkillType::Auto),
-          _ => Err(E::invalid_value(serde::de::Unexpected::Unsigned(v), &Self))
-        }
-      }
-    }
-
-    deserializer.deserialize_u64(SkillTypeVisitor)
+impl_deserialize_uint_enum! {
+  SkillTableSkillType,
+  SkillTableSkillTypeVisitor,
+  "a positive integer, one of 0, 1, or 2",
+  match {
+    0 => SkillTableSkillType::Passive,
+    1 => SkillTableSkillType::Manual,
+    2 => SkillTableSkillType::Auto
   }
 }
 
@@ -1513,10 +1501,185 @@ fn apply_formatting(value: f32, negative: bool, suffix: FormattingSuffix) -> Str
   out
 }
 
+#[derive(Debug, Clone, Copy)]
 enum FormattingSuffix {
   DecimalPercent, // :0.0%
   IntegerPercent, // :0%
   Decimal, // :0.0
   Integer, // :0
   None
+}
+
+impl DataFile for EquipTable {
+  const LOCATION: &'static str = "excel/uniequip_table.json";
+  const IDENTIFIER: &'static str = "uniequip_table";
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct EquipTable {
+  #[serde(rename = "equipDict")]
+  equip_list: HashMap<String, EquipTableEquip>,
+  #[serde(rename = "missionList")]
+  mission_list: HashMap<String, EquipTableMission>,
+  #[serde(rename = "charEquip")]
+  character_equip_list: HashMap<String, Vec<String>>
+}
+
+impl EquipTable {
+  fn take_operator_modules(&mut self, id: &str) -> Option<Vec<OperatorModule>> {
+    let character_equip_list = self.character_equip_list.remove(id)?;
+    recollect_maybe(character_equip_list.iter().skip(1).cloned(), |character_equip_id| {
+      self.equip_list.remove(&character_equip_id).and_then(|equip_table_equip| {
+        equip_table_equip.into_operator_module(&self.mission_list)
+      })
+    })
+  }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct EquipTableEquip {
+  #[serde(rename = "uniEquipId")]
+  id: String,
+  #[serde(rename = "uniEquipName")]
+  name: String,
+  #[serde(rename = "uniEquipDesc")]
+  description: String,
+  #[serde(rename = "unlockEvolvePhase")]
+  unlock_phase: EquipTablePhase,
+  #[serde(rename = "unlockLevel")]
+  unlock_level: u32,
+  #[serde(rename = "unlockFavorPoint")]
+  unlock_trust_points: u32,
+  #[serde(rename = "missionList")]
+  mission_list: Vec<String>,
+  #[serde(rename = "itemCost")]
+  item_cost: Option<Vec<ItemCost>>
+}
+
+impl EquipTableEquip {
+  fn into_operator_module(self, mission_list: &HashMap<String, EquipTableMission>) -> Option<OperatorModule> {
+    let missions = recollect_maybe(self.mission_list, |id| {
+      mission_list.get(&id).map(|mission| (id, mission.clone().into_operator_module_mission()))
+    })?;
+
+    Some(OperatorModule {
+      id: self.id,
+      name: self.name,
+      description: self.description,
+      condition: PromotionAndLevel {
+        promotion: self.unlock_phase.into_promotion(),
+        level: self.unlock_level
+      },
+      required_trust: trust_points_to_percent(self.unlock_trust_points),
+      upgrade_cost: ItemCost::convert(self.item_cost.unwrap_or_default()),
+      missions
+    })
+  }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct EquipTableMission {
+  #[serde(rename = "desc")]
+  description: String,
+  #[serde(rename = "uniEquipMissionSort")]
+  sort: u32
+}
+
+impl EquipTableMission {
+  fn into_operator_module_mission(self) -> OperatorModuleMission {
+    OperatorModuleMission {
+      description: self.description,
+      sort: self.sort
+    }
+  }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy)]
+pub(crate) enum EquipTablePhase {
+  Elite0 = 0,
+  Elite1 = 1,
+  Elite2 = 2
+}
+
+impl EquipTablePhase {
+  fn into_promotion(self) -> Promotion {
+    match self {
+      EquipTablePhase::Elite0 => Promotion::None,
+      EquipTablePhase::Elite1 => Promotion::Elite1,
+      EquipTablePhase::Elite2 => Promotion::Elite2
+    }
+  }
+}
+
+impl_deserialize_uint_enum! {
+  EquipTablePhase,
+  EquipTablePhaseVisitor,
+  "a positive integer, one of 0, 1, or 2",
+  match {
+    0 => EquipTablePhase::Elite0,
+    1 => EquipTablePhase::Elite1,
+    2 => EquipTablePhase::Elite2
+  }
+}
+
+fn trust_points_to_percent(points: u32) -> u32 {
+  match points {
+    0..=7 => 0, 8..=15 => 1, 16..=27 => 2, 28..=39 => 3, 40..=55 => 4,
+    56..=71 => 5, 72..=91 => 6, 92..=111 => 7, 112..=136 => 8, 137..=161 => 9,
+    162..=191 => 10, 192..=221 => 11, 222..=254 => 12, 255..=287 => 13, 288..=324 => 14,
+    325..=361 => 15, 362..=403 => 16, 404..=445 => 17, 446..=490 => 18, 491..=535 => 19,
+    536..=585 => 20, 586..=635 => 21, 636..=690 => 22, 691..=745 => 23, 746..=803 => 24,
+    804..=861 => 25, 862..=923 => 26, 924..=985 => 27, 986..=1051 => 28, 1052..=1117 => 29,
+    1118..=1183 => 30, 1184..=1249 => 31, 1250..=1315 => 32, 1316..=1381 => 33, 1382..=1456 => 34,
+    1457..=1531 => 35, 1532..=1606 => 36, 1607..=1681 => 37, 1682..=1756 => 38, 1757..=1831 => 39,
+    1832..=1916 => 40, 1917..=2001 => 41, 2002..=2086 => 42, 2087..=2171 => 43, 2172..=2256 => 44,
+    2257..=2351 => 45, 2352..=2446 => 46, 2447..=2541 => 47, 2542..=2636 => 48, 2637..=2731 => 49,
+    2732..=2839 => 50, 2840..=2959 => 51, 2960..=3079 => 52, 3080..=3199 => 53, 3200..=3319 => 54,
+    3320..=3449 => 55, 3450..=3579 => 56, 3580..=3709 => 57, 3710..=3839 => 58, 3840..=3969 => 59,
+    3970..=4109 => 60, 4110..=4249 => 61, 4250..=4389 => 62, 4390..=4529 => 63, 4530..=4669 => 64,
+    4670..=4819 => 65, 4820..=4969 => 66, 4970..=5119 => 67, 5120..=5269 => 68, 5270..=5419 => 69,
+    5420..=5574 => 70, 5575..=5729 => 71, 5730..=5884 => 72, 5885..=6039 => 73, 6040..=6194 => 74,
+    6195..=6349 => 75, 6350..=6504 => 76, 6505..=6659 => 77, 6660..=6814 => 78, 6815..=6969 => 79,
+    6970..=7124 => 80, 7125..=7279 => 81, 7280..=7434 => 82, 7435..=7589 => 83, 7590..=7744 => 84,
+    7745..=7899 => 85, 7900..=8054 => 86, 8055..=8209 => 87, 8210..=8364 => 88, 8365..=8519 => 89,
+    8520..=8674 => 90, 8675..=8829 => 91, 8830..=8984 => 92, 8985..=9139 => 93, 9140..=9294 => 94,
+    9295..=9449 => 95, 9450..=9604 => 96, 9605..=9759 => 97, 9760..=9914 => 98, 9915..=10069 => 99,
+    10070..=10224 => 100, 10225..=10379 => 101, 10380..=10534 => 102, 10535..=10689 => 103, 10690..=10844 => 104,
+    10845..=10999 => 105, 11000..=11154 => 106, 11155..=11309 => 107, 11310..=11464 => 108, 11465..=11619 => 109,
+    11620..=11774 => 110, 11775..=11929 => 111, 11930..=12084 => 112, 12085..=12239 => 113, 12240..=12394 => 114,
+    12395..=12549 => 115, 12550..=12704 => 116, 12705..=12859 => 117, 12860..=13014 => 118, 13015..=13169 => 119,
+    13170..=13324 => 120, 13325..=13479 => 121, 13480..=13634 => 122, 13635..=13789 => 123, 13790..=13944 => 124,
+    13945..=14099 => 125, 14100..=14254 => 126, 14255..=14409 => 127, 14410..=14564 => 128, 14565..=14719 => 129,
+    14720..=14874 => 130, 14875..=15029 => 131, 15030..=15184 => 132, 15185..=15339 => 133, 15340..=15494 => 134,
+    15495..=15649 => 135, 15650..=15804 => 136, 15805..=15959 => 137, 15960..=16114 => 138, 16115..=16269 => 139,
+    16270..=16424 => 140, 16425..=16579 => 141, 16580..=16734 => 142, 16735..=16889 => 143, 16890..=17044 => 144,
+    17045..=17199 => 145, 17200..=17354 => 146, 17355..=17509 => 147, 17510..=17664 => 148, 17665..=17819 => 149,
+    17820..=17974 => 150, 17975..=18129 => 151, 18130..=18284 => 152, 18285..=18439 => 153, 18440..=18594 => 154,
+    18595..=18749 => 155, 18750..=18904 => 156, 18905..=19059 => 157, 19060..=19214 => 158, 19215..=19369 => 159,
+    19370..=19524 => 160, 19525..=19679 => 161, 19680..=19834 => 162, 19835..=19989 => 163, 19990..=20144 => 164,
+    20145..=20299 => 165, 20300..=20454 => 166, 20455..=20609 => 167, 20610..=20764 => 168, 20765..=20919 => 169,
+    20920..=21074 => 170, 21075..=21229 => 171, 21230..=21384 => 172, 21385..=21539 => 173, 21540..=21694 => 174,
+    21695..=21849 => 175, 21850..=22004 => 176, 22005..=22159 => 177, 22160..=22314 => 178, 22315..=22469 => 179,
+    22470..=22624 => 180, 22625..=22779 => 181, 22780..=22934 => 182, 22935..=23089 => 183, 23090..=23244 => 184,
+    23245..=23399 => 185, 23400..=23554 => 186, 23555..=23709 => 187, 23710..=23864 => 188, 23865..=24019 => 189,
+    24020..=24174 => 190, 24175..=24329 => 191, 24330..=24484 => 192, 24485..=24639 => 193, 24640..=24794 => 194,
+    24795..=24949 => 195, 24950..=25104 => 196, 25105..=25259 => 197, 25260..=25414 => 198, 25415..=25569 => 199,
+    25570..=u32::MAX => 200
+  }
+}
+
+fn recollect<T, U, I, C, F>(i: I, f: F) -> C
+where I: IntoIterator<Item = T>, C: FromIterator<U>, F: FnMut(T) -> U {
+  i.into_iter().map(f).collect()
+}
+
+fn recollect_maybe<T, U, I, C, F>(i: I, f: F) -> Option<C>
+where I: IntoIterator<Item = T>, C: FromIterator<U>, F: FnMut(T) -> Option<U> {
+  recollect(i, f)
+}
+
+fn recollect_filter<T, U, I, C, F>(i: I, f: F) -> C
+where I: IntoIterator<Item = T>, C: FromIterator<U>, F: FnMut(T) -> Option<U> {
+  i.into_iter().filter_map(f).collect()
 }

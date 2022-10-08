@@ -136,6 +136,9 @@ pub struct Operator {
   /// Appears to be for an 'alternate name' like the Ursus operators' cyrllic names.
   /// (On non-EN regions, the appellation will be the operator's name in latin script)
   pub appellation: Option<String>,
+  /// Whether this operator is ranged or melee.
+  /// (Note that operators that can do both may show as melee)
+  pub position: Position,
   /// The recruitment tags for this operator, region dependent.
   pub recruitment_tags: Vec<String>,
   /// Ranges from 1 to 6, indicates the number of stars (rarity) of this operator.
@@ -146,9 +149,8 @@ pub struct Operator {
   pub sub_profession: SubProfession,
   /// A list of promotions that this operator can achieve.
   pub promotions: OperatorPromotions,
-  /// The list of non-default modules for this operator.
-  /// Will be empty if the operator has no modules.
-  pub modules: Vec<OperatorModule>,
+  /// The item required to upgrade this operator's potential.
+  pub potential_item: Option<String>,
   /// Will almost always be length 5.
   /// Exceptions are Savage and any operators without potential.
   pub potential: Vec<OperatorPotential>,
@@ -156,6 +158,8 @@ pub struct Operator {
   pub skills: Vec<OperatorSkill>,
   /// A list of talents and their unlock phases that this operator can achieve.
   pub talents: Vec<OperatorTalent>,
+  /// The list of non-default modules for this operator.
+  pub modules: Vec<OperatorModule>,
   pub base_skills: Vec<OperatorBaseSkill>,
   pub file: OperatorFile
 }
@@ -275,7 +279,7 @@ pub struct OperatorAttributes {
   pub atk: u32,
   pub def: u32,
   pub magic_resistance: f32,
-  pub deployment_cost: u8,
+  pub deployment_cost: u32,
   pub block_count: u8,
   pub move_speed: f32,
   pub attack_speed: f32,
@@ -290,20 +294,6 @@ pub struct OperatorAttributes {
   pub is_silence_immune: bool,
   pub is_sleep_immune: bool,
   pub is_frozen_immune: bool
-}
-
-/// An unlockable module for an operator. Currently, no operators have more than one.
-#[repr(transparent)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct OperatorModule {
-  pub attributes: OperatorAttributes
-}
-
-impl OperatorModule {
-  /// Returns whether or not this module's promotion and level requirements have been met
-  pub fn is_unlockable(&self, promotion_and_level: PromotionAndLevel) -> bool {
-    Promotion::Elite2.with_level(self.attributes.level) <= promotion_and_level
-  }
 }
 
 /// A single 'potential' upgrade level for an operator.
@@ -342,7 +332,7 @@ impl OperatorSkill {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorSkillLevel {
   pub description: Option<String>,
-  pub range_id: Option<String>,
+  pub attack_range_id: Option<String>,
   pub prefab_key: Option<String>,
   pub duration: f32,
   pub max_charge_time: u32,
@@ -428,7 +418,7 @@ pub struct OperatorTalentPhase {
   ///
   /// It currently has only four possible values: `1`, `1+`, `2` and `#`.
   /// - When it's `1`, it's always on the first talent.
-  /// - When it's `1+`, it's always on the first talent, and the operator always has a module.
+  /// - When it's `1+`, it's always on the first talent.
   /// - When it's `2`, it's always on the second talent.
   /// - `#` is currently only present on Amiya's "???" talent and on Phantom's "Phantom Mastery" talent.
   ///   There's no discernible pattern here, maybe a "special" talent marker?
@@ -441,6 +431,31 @@ impl OperatorTalentPhase {
   pub fn is_unlocked(&self, promotion_and_level: PromotionAndLevel, potential: u8) -> bool {
     self.condition <= promotion_and_level && self.required_potential <= potential
   }
+}
+
+/// An unlockable module for an operator. Currently, no operators have more than one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperatorModule {
+  pub id: String,
+  pub name: String,
+  pub description: String,
+  pub condition: PromotionAndLevel,
+  pub required_trust: u32,
+  pub upgrade_cost: HashMap<String, u32>,
+  pub missions: HashMap<String, OperatorModuleMission>
+}
+
+impl OperatorModule {
+  /// Returns whether or not this module's promotion and level requirements have been met
+  pub fn is_unlockable(&self, promotion_and_level: PromotionAndLevel, trust: u32) -> bool {
+    self.condition <= promotion_and_level && self.required_trust <= trust
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperatorModuleMission {
+  pub description: String,
+  pub sort: u32
 }
 
 /// An operator's base skill and all of its unlockable phases.
@@ -478,6 +493,14 @@ pub enum OperatorBaseSkillCategory {
   Function,
   Recovery,
   Output
+}
+
+/// Indicates whether an operator is primarily melee or primarily ranged.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Position {
+  Melee,
+  Ranged
 }
 
 /// Represents the promotion level and numeric level of an operator.

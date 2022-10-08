@@ -19,5 +19,5 @@ uord = { git = "https://github.com/ScottyThePilot/misc-crates", features = ["ser
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "fs", "macros"] }
 
 [features]
-default = ["assertions"]
+default = []
 assertions = [] # optional debug assertions
