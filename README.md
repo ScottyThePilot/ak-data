@@ -9,6 +9,7 @@ Currently this crate accomplishes the following things:
   - Parsing operator file records from `excel/handbook_info_table.json`.
   - Parsing operator skill info from `excel/skill_table.json`.
   - Parsing operator base skill info from `excel/building_data.json`.
+  - Parsing operator module info from `excel/uniequip_table.json`.
 - Parsing building info from `excel/building_data.json`.
 - Parsing the item list from `excel/item_table.json`.
 
