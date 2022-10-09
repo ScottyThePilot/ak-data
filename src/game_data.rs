@@ -150,7 +150,7 @@ pub struct Operator {
   /// A list of promotions that this operator can achieve.
   pub promotions: OperatorPromotions,
   /// The item required to upgrade this operator's potential.
-  pub potential_item: Option<String>,
+  pub potential_item_id: Option<String>,
   /// Will almost always be length 5.
   /// Exceptions are Savage and any operators without potential.
   pub potential: Vec<OperatorPotential>,
@@ -161,7 +161,14 @@ pub struct Operator {
   /// The list of non-default modules for this operator.
   pub modules: Vec<OperatorModule>,
   pub base_skills: Vec<OperatorBaseSkill>,
+  pub trust_bonus: OperatorTrustAttributes,
   pub file: OperatorFile
+}
+
+impl Operator {
+  pub fn get_potential_item<'a>(&self, items: &'a HashMap<String, Item>) -> Option<&'a Item> {
+    self.potential_item_id.as_deref().and_then(|item_id| items.get(item_id))
+  }
 }
 
 /// Contains information about an operator's three possible promotion phases.
@@ -185,7 +192,7 @@ impl OperatorPromotions {
 
   /// Returns the stats of this operator at the given promotion and level.
   /// (Does not account for stat boosts from talents.)
-  pub fn get_attributes(&self, promotion_and_level: PromotionAndLevel) -> Option<OperatorAttributes> {
+  pub fn get_attributes(&self, promotion_and_level: PromotionAndLevel) -> Option<OperatorPromotionAttributes> {
     let PromotionAndLevel { promotion, level } = promotion_and_level;
     self.get(promotion).map(|promotion| promotion.get_level_attributes(level))
   }
@@ -225,8 +232,8 @@ impl<'a> IntoIterator for &'a OperatorPromotions {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorPromotion {
   pub attack_range_id: Option<String>,
-  pub min_attributes: OperatorAttributes,
-  pub max_attributes: OperatorAttributes,
+  pub min_attributes: OperatorPromotionAttributes,
+  pub max_attributes: OperatorPromotionAttributes,
   pub max_level: u32,
   pub upgrade_cost: HashMap<String, u32>
 }
@@ -237,8 +244,8 @@ impl OperatorPromotion {
     ItemsIter::new(&self.upgrade_cost, items)
   }
 
-  pub fn get_level_attributes(&self, level: u32) -> OperatorAttributes {
-    OperatorAttributes {
+  pub fn get_level_attributes(&self, level: u32) -> OperatorPromotionAttributes {
+    OperatorPromotionAttributes {
       level,
       max_hp: self.lerp_attribute_u32(level, |attributes| attributes.max_hp),
       atk: self.lerp_attribute_u32(level, |attributes| attributes.atk),
@@ -257,12 +264,12 @@ impl OperatorPromotion {
   }
 
   fn lerp_attribute_u32<F>(&self, level: u32, f: F) -> u32
-  where F: Fn(&OperatorAttributes) -> u32 {
+  where F: Fn(&OperatorPromotionAttributes) -> u32 {
     self.lerp_attribute_f32(level, move |a| f(a) as f32).round() as u32
   }
 
   fn lerp_attribute_f32<F>(&self, level: u32, f: F) -> f32
-  where F: Fn(&OperatorAttributes) -> f32 {
+  where F: Fn(&OperatorPromotionAttributes) -> f32 {
     let min = f(&self.min_attributes);
     let max = f(&self.max_attributes);
     let t = self.level_t(level);
@@ -270,10 +277,10 @@ impl OperatorPromotion {
   }
 }
 
-/// Operator attributes that may be associated with an operator module or an operator promotion.
+/// Operator attributes associated with an operator promotion.
 #[non_exhaustive]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct OperatorAttributes {
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct OperatorPromotionAttributes {
   pub level: u32,
   pub max_hp: u32,
   pub atk: u32,
@@ -296,6 +303,24 @@ pub struct OperatorAttributes {
   pub is_frozen_immune: bool
 }
 
+/// Operator attributes associated with an operator's trust level.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct OperatorTrustAttributes {
+  pub max_hp: u32,
+  pub atk: u32,
+  pub def: u32
+}
+
+impl OperatorTrustAttributes {
+  // TODO: implement `get_trust_level_attributes` function
+}
+
+impl Default for OperatorTrustAttributes {
+  fn default() -> Self {
+    OperatorTrustAttributes { max_hp: 0, atk: 0, def: 0 }
+  }
+}
+
 /// A single 'potential' upgrade level for an operator.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorPotential {
@@ -315,14 +340,14 @@ pub struct OperatorSkill {
   pub condition: PromotionAndLevel,
   pub activation: SkillActivation,
   pub recovery: SkillRecovery,
-  /// Upgrade levels 1-7
+  /// Upgrade levels 1-7.
   pub levels: [OperatorSkillLevel; 7],
-  /// Mastery levels 1-3 (If applicable)
+  /// Mastery levels 1-3 (If applicable).
   pub mastery: Option<[OperatorSkillMastery; 3]>
 }
 
 impl OperatorSkill {
-  /// Returns whether or not this skill has been unlocked based on the given promotion and level
+  /// Returns whether or not this skill has been unlocked based on the given promotion and level.
   pub fn is_unlocked(&self, promotion_and_level: PromotionAndLevel) -> bool {
     self.condition <= promotion_and_level
   }
@@ -643,10 +668,12 @@ pub struct Building {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BuildingUpgrade {
   pub unlock_condition: String,
-  /// Materials required to construct/upgrade this building
+  /// Materials required to construct/upgrade this building.
   pub construction_cost: HashMap<String, u32>,
-  /// Drones required to construct/upgrade this building
+  /// Drones required to construct/upgrade this building.
   pub construction_drones: u32,
+  /// The amount of power that this building consumes/produces.
+  /// Will be positive for power plants, negative for other buildings.
   pub power: i32,
   pub operator_capacity: u32,
   pub manpower_cost: u32

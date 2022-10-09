@@ -218,12 +218,16 @@ impl CharacterTableEntry {
         elite1: promotion_elite1,
         elite2: promotion_elite2
       },
-      potential_item: self.potential_item_id,
+      potential_item_id: self.potential_item_id,
       potential,
       skills,
       talents,
       modules,
       base_skills,
+      trust_bonus: match self.favor_key_frames {
+        Some([_, keyframe]) => keyframe.into_operator_trust_attributes(),
+        None => OperatorTrustAttributes::default()
+      },
       file
     })
   }
@@ -247,8 +251,8 @@ impl CharacterTablePhase {
     let [min_attributes, max_attributes] = self.attributes_key_frames;
     OperatorPromotion {
       attack_range_id: self.range_id,
-      min_attributes: min_attributes.into_operator_attributes(),
-      max_attributes: max_attributes.into_operator_attributes(),
+      min_attributes: min_attributes.into_operator_promotion_attributes(),
+      max_attributes: max_attributes.into_operator_promotion_attributes(),
       max_level: self.max_level,
       upgrade_cost: ItemCost::convert(self.upgrade_cost)
     }
@@ -262,8 +266,8 @@ pub(crate) struct CharacterTableKeyFrame {
 }
 
 impl CharacterTableKeyFrame {
-  fn into_operator_attributes(self) -> OperatorAttributes {
-    OperatorAttributes {
+  fn into_operator_promotion_attributes(self) -> OperatorPromotionAttributes {
+    OperatorPromotionAttributes {
       level: self.level,
       max_hp: self.data.max_hp,
       atk: self.data.atk,
@@ -284,6 +288,14 @@ impl CharacterTableKeyFrame {
       is_silence_immune: self.data.is_silence_immune,
       is_sleep_immune: self.data.is_sleep_immune,
       is_frozen_immune: self.data.is_frozen_immune
+    }
+  }
+
+  fn into_operator_trust_attributes(self) -> OperatorTrustAttributes {
+    OperatorTrustAttributes {
+      max_hp: self.data.max_hp,
+      atk: self.data.atk,
+      def: self.data.def
     }
   }
 }
