@@ -305,7 +305,7 @@ pub struct OperatorPromotionAttributes {
 }
 
 /// Operator attributes associated with an operator's trust level.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorTrustAttributes {
   pub max_hp: u32,
   pub atk: u32,
@@ -557,7 +557,7 @@ pub struct PromotionAndLevel {
 impl PartialOrd for PromotionAndLevel {
   #[inline]
   fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-    Some(Self::cmp(&self, &other))
+    Some(Self::cmp(self, other))
   }
 }
 
@@ -844,7 +844,7 @@ impl<'a> Iterator for ItemsIter<'a> {
   #[inline]
   fn next(&mut self) -> Option<Self::Item> {
     self.iter.find_map(|value| {
-      Self::get(&self.items, value)
+      Self::get(self.items, value)
     })
   }
 
@@ -857,7 +857,7 @@ impl<'a> Iterator for ItemsIter<'a> {
   fn fold<Acc, Fold>(self, init: Acc, mut fold: Fold) -> Acc
   where Fold: FnMut(Acc, Self::Item) -> Acc {
     self.iter.fold(init, |acc, value| {
-      match Self::get(&self.items, value) {
+      match Self::get(self.items, value) {
         Some(x) => fold(acc, x),
         None => acc
       }

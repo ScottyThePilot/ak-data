@@ -100,15 +100,6 @@ impl From<DataFilesTuple> for DataFiles {
   }
 }
 
-
-
-macro_rules! assertion_some {
-  ($expr:expr, $literal:literal $(, $($t:tt)*)?) => (match cfg!(feature = "assertions") {
-    true => if let Some(value) = $expr { value } else { panic!($literal $(, $($t)*)?) },
-    false => $expr?
-  });
-}
-
 pub(crate) trait DataFile: DeserializeOwned {
   const LOCATION: &'static str;
   const IDENTIFIER: &'static str;
@@ -381,8 +372,8 @@ pub(crate) struct CharacterTableSkill {
 impl CharacterTableSkill {
   fn into_operator_skill(self, skill_table: &SkillTable) -> Option<OperatorSkill> {
     let id = self.id?;
-    let skill_table_entry = assertion_some!(skill_table.get(&id), "key {} not present", id);
-    let (name, activation, recovery) = assertion_some!(skill_table_entry.name_activation_recovery(), "invalid skill levels");
+    let skill_table_entry = skill_table.get(&id)?;
+    let (name, activation, recovery) = skill_table_entry.name_activation_recovery()?;
     let (skill_table_levels7, skill_table_levels3) = skill_table_entry.split_levels()?;
     let levels = skill_table_levels7.clone().map(SkillTableLevel::into_skill_level);
     let mastery = self.mastery_upgrades.zip(skill_table_levels3).map(|(mastery_upgrades, skill_table_levels)| {
@@ -1449,8 +1440,8 @@ impl_deserialize_uint_enum! {
 static RX_TAG: Lazy<Regex> = Lazy::new(|| Regex::new(r"<[@$\w.]+>|</>").unwrap());
 static RX_TEMPLATE: Lazy<Regex> = Lazy::new(|| Regex::new(r"\{[\w:.%\-@\[\]]+\}").unwrap());
 
-fn strip_tags<'a>(text: &'a str) -> Cow<'a, str> {
-  RX_TAG.replace_all(&text, "")
+fn strip_tags(text: &str) -> Cow<str> {
+  RX_TAG.replace_all(text, "")
 }
 
 fn apply_templates(text: &str, blackboard: HashMap<String, f32>) -> String {
@@ -1463,11 +1454,7 @@ fn apply_templates(text: &str, blackboard: HashMap<String, f32>) -> String {
     if let Some(&blackboard_entry) = blackboard.get(&key) {
       apply_formatting(blackboard_entry, negative, suffix)
     } else {
-      if cfg!(feature = "assertions") {
-        panic!("assertion failed: unknown key {key:?} encountered");
-      } else {
-        key.to_uppercase()
-      }
+      key.to_uppercase()
     }
   });
 
@@ -1475,7 +1462,7 @@ fn apply_templates(text: &str, blackboard: HashMap<String, f32>) -> String {
 }
 
 fn strip_formatting_markers(string: &str) -> (String, bool, FormattingSuffix) {
-  let (negative, string) = match string.strip_prefix("-") {
+  let (negative, string) = match string.strip_prefix('-') {
     Some(string) => (true, string),
     None => (false, string)
   };
@@ -1495,22 +1482,20 @@ fn strip_formatting_markers(string: &str) -> (String, bool, FormattingSuffix) {
 
 fn apply_formatting(value: f32, negative: bool, suffix: FormattingSuffix) -> String {
   fn r(mut string: String) -> String {
-    if string.ends_with("0") { string.pop(); };
-    if string.ends_with("0") { string.pop(); };
-    if string.ends_with(".") { string.pop(); };
+    if string.ends_with('0') { string.pop(); };
+    if string.ends_with('0') { string.pop(); };
+    if string.ends_with('.') { string.pop(); };
     string
   }
 
   let value = if negative { -value } else { value };
-  let out = match suffix {
+  match suffix {
     FormattingSuffix::DecimalPercent => r(format!("{:.2}%", value * 100.0)),
     FormattingSuffix::IntegerPercent => format!("{:.0}%", value * 100.0),
     FormattingSuffix::Decimal => r(format!("{value:.2}")),
     FormattingSuffix::Integer => format!("{value:.0}"),
     FormattingSuffix::None => format!("{value}")
-  };
-
-  out
+  }
 }
 
 #[derive(Debug, Clone, Copy)]
