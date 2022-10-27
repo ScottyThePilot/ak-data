@@ -265,15 +265,16 @@ impl OperatorPromotion {
 
   fn lerp_attribute_u32<F>(&self, level: u32, f: F) -> u32
   where F: Fn(&OperatorPromotionAttributes) -> u32 {
-    self.lerp_attribute_f32(level, move |a| f(a) as f32).round() as u32
+    let min = f(&self.min_attributes);
+    let max = f(&self.max_attributes);
+    lerp_u32(min, max, self.level_t(level))
   }
 
   fn lerp_attribute_f32<F>(&self, level: u32, f: F) -> f32
   where F: Fn(&OperatorPromotionAttributes) -> f32 {
     let min = f(&self.min_attributes);
     let max = f(&self.max_attributes);
-    let t = self.level_t(level);
-    min + (max - min) * t
+    lerp_f32(min, max, self.level_t(level))
   }
 }
 
@@ -312,13 +313,31 @@ pub struct OperatorTrustAttributes {
 }
 
 impl OperatorTrustAttributes {
-  // TODO: implement `get_trust_level_attributes` function
+  pub fn get_trust_level_attributes(&self, trust: u32) -> OperatorTrustAttributes {
+    // trust cannot go over 200
+    let t = trust.min(200) as f32 / 200.0;
+    OperatorTrustAttributes {
+      max_hp: lerp_u32(0, self.max_hp, t),
+      atk: lerp_u32(0, self.atk, t),
+      def: lerp_u32(0, self.def, t)
+    }
+  }
 }
 
 impl Default for OperatorTrustAttributes {
   fn default() -> Self {
     OperatorTrustAttributes { max_hp: 0, atk: 0, def: 0 }
   }
+}
+
+#[inline]
+fn lerp_f32(min: f32, max: f32, t: f32) -> f32 {
+  min + (max - min) * t
+}
+
+#[inline]
+fn lerp_u32(min: u32, max: u32, t: f32) -> u32 {
+  lerp_f32(min as f32, max as f32, t).round() as u32
 }
 
 /// A single 'potential' upgrade level for an operator.
