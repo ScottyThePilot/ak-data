@@ -771,9 +771,8 @@ impl OperatorFileEntry {
   /// # #[tokio::main]
   /// # async fn main() {
   /// #   let game_data = GameData::from_local("gamedata").await.expect("failed to get game data");
-  /// #   let fiammeta = game_data.find_operator("Fiammeta").expect("no fiammeta :(");
-  /// let fiammeta_file = fiammeta.operator_file.as_ref().unwrap();
-  /// assert_eq!(fiammeta_file.entries[0].find_line("Gender"), Some("Female"));
+  /// let fiammeta = game_data.find_operator("Fiammeta").expect("no fiammeta :(");
+  /// assert_eq!(fiammeta.file.entries[0].find_line("Gender"), Some("Female"));
   /// # }
   /// ```
   pub fn find_line(&self, name: &str) -> Option<&str> {
