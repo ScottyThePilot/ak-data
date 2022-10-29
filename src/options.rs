@@ -11,7 +11,11 @@
 #[doc(no_inline)] pub use octocrab;
 #[doc(no_inline)] pub use octocrab::{Octocrab, OctocrabBuilder};
 
-use crate::format::{DataFile, CharacterTable, CharacterMetaTable, BuildingData, ItemTable};
+use crate::format::DataFile;
+use crate::format::building_data::BuildingData;
+use crate::format::character_meta_table::CharacterMetaTable;
+use crate::format::character_table::CharacterTable;
+use crate::format::item_table::ItemTable;
 use crate::game_data::{DataFileInfo, GameData, UpdateInfo};
 
 use std::fmt;
