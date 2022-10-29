@@ -1,5 +1,8 @@
 use crate::format::*;
-use crate::game_data::*;
+use crate::game_data::{
+  Building, BuildingType, BuildingUpgrade,
+  OperatorBaseSkill, OperatorBaseSkillCategory, OperatorBaseSkillPhase
+};
 
 use std::collections::HashMap;
 

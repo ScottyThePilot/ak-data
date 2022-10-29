@@ -1,7 +1,7 @@
 use serde::de::{Deserialize, Deserializer};
 
 use crate::format::*;
-use crate::game_data::*;
+use crate::game_data::{OperatorFile, OperatorFileEntry, OperatorFileUnlock};
 
 use std::collections::HashMap;
 

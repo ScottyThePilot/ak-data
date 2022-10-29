@@ -18,7 +18,7 @@ use self::equip_table::EquipTable;
 use self::handbook_info_table::HandbookInfoTable;
 use self::item_table::ItemTable;
 use self::skill_table::SkillTable;
-use crate::game_data::*;
+use crate::game_data::{GameData, Promotion, PromotionAndLevel};
 use crate::options::Options;
 
 use std::borrow::Cow;

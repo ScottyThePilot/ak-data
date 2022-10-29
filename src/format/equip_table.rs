@@ -1,5 +1,5 @@
 use crate::format::*;
-use crate::game_data::*;
+use crate::game_data::{OperatorModule, OperatorModuleMission};
 
 use std::collections::HashMap;
 
