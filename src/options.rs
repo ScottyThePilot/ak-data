@@ -11,12 +11,11 @@
 #[doc(no_inline)] pub use octocrab;
 #[doc(no_inline)] pub use octocrab::{Octocrab, OctocrabBuilder};
 
+use chrono::{DateTime, Utc};
+use octocrab::models::repos::RepoCommit;
+
 use crate::format::DataFile;
-use crate::format::building_data::BuildingData;
-use crate::format::character_meta_table::CharacterMetaTable;
-use crate::format::character_table::CharacterTable;
-use crate::format::item_table::ItemTable;
-use crate::game_data::{DataFileInfo, GameData, UpdateInfo};
+use crate::game_data::GameData;
 
 use std::fmt;
 use std::fs::File;
@@ -134,27 +133,32 @@ impl Options {
     }
   }
 
-  pub async fn request_update_info(&self) -> Result<UpdateInfo, crate::Error> {
-    get_update_info(self).await
+  pub async fn get_last_updated(&self) -> Result<DateTime<Utc>, crate::Error> {
+    let Options { repository: (owner, repo), branch, .. } = self;
+    let repo_handle = self.instance.repos(owner, repo);
+    let commits_list = repo_handle.list_commits().branch(branch).send().await?;
+    commits_list.into_iter()
+      .find_map(get_commit_last_updated)
+      .ok_or(crate::Error::CannotFindUpdateTime)
   }
 
   /// Equivalent to [`GameData::from_remote`]
   pub async fn request_game_data(&self) -> Result<GameData, crate::Error> {
-    let (data_files, update_info) = tokio::try_join!(
+    let (data_files, last_updated) = tokio::try_join!(
       crate::format::DataFiles::from_remote(self),
-      get_update_info(self)
+      self.get_last_updated()
     )?;
 
-    Ok(data_files.into_game_data(update_info))
+    Ok(data_files.into_game_data(Some(last_updated)))
   }
 
   /// Patches the given `GameData` if the data it is based on is out of date.
   /// Replaces `self` and returns it if it was out of date.
   pub async fn patch_game_data(&self, game_data: &mut GameData) -> Result<Option<GameData>, crate::Error> {
-    let update_info = get_update_info(self).await?;
-    if game_data.is_outdated(&update_info) {
+    let last_updated = self.get_last_updated().await?;
+    if game_data.is_outdated(last_updated) {
       let data_files = crate::format::DataFiles::from_remote(self).await?;
-      let game_data = std::mem::replace(game_data, data_files.into_game_data(update_info));
+      let game_data = std::mem::replace(game_data, data_files.into_game_data(Some(last_updated)));
       Ok(Some(game_data))
     } else {
       Ok(None)
@@ -169,32 +173,8 @@ impl Default for Options {
   }
 }
 
-pub(crate) async fn get_update_info(options: &Options) -> Result<UpdateInfo, crate::Error> {
-  Ok(UpdateInfo::from_iter([
-    get_data_file_info_entry::<CharacterTable>(options).await?,
-    get_data_file_info_entry::<CharacterMetaTable>(options).await?,
-    get_data_file_info_entry::<BuildingData>(options).await?,
-    get_data_file_info_entry::<ItemTable>(options).await?
-  ]))
-}
-
-pub(crate) async fn get_data_file_info<T: DataFile>(options: &Options)
--> Result<DataFileInfo, crate::Error> {
-  let Options { repository: (owner, repo), branch, region, .. } = options;
-  let repo_handle = options.instance.repos(owner, repo);
-  // Search only one page of commits for a commit containing an author and date
-  let commits_list = repo_handle.list_commits().branch(branch)
-    .path(format!("{region}/gamedata/{}", T::LOCATION))
-    .send().await?;
-  let info = commits_list.into_iter()
-    .find_map(DataFileInfo::from_commit)
-    .ok_or(crate::Error::CannotFindUpdateTime)?;
-  Ok(info)
-}
-
-pub(crate) async fn get_data_file_info_entry<T: DataFile>(options: &Options)
--> Result<(String, DataFileInfo), crate::Error> {
-  get_data_file_info::<T>(options).await.map(|info| (T::IDENTIFIER.to_owned(), info))
+fn get_commit_last_updated(repo_commit: RepoCommit) -> Option<DateTime<Utc>> {
+  repo_commit.commit.author.and_then(|author| author.date)
 }
 
 pub(crate) async fn get_data_file_remote<T: DataFile>(options: &Options) -> Result<T, crate::Error> {

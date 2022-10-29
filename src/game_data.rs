@@ -4,7 +4,6 @@
 //! See the examples for usage help.
 
 use chrono::{DateTime, Utc};
-use octocrab::models::repos::RepoCommit;
 pub use uord::UOrd;
 
 use std::cmp::Ordering;
@@ -20,41 +19,12 @@ use crate::options::Options;
 
 
 
-/// Contains specific information about a game file that was used to construct a gamedata instance.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DataFileInfo {
-  pub url: String,
-  pub sha: String,
-  pub node_id: String,
-  pub last_updated: DateTime<Utc>
-}
-
-impl DataFileInfo {
-  pub fn from_commit(commit: RepoCommit) -> Option<Self> {
-    let RepoCommit { url, sha, node_id, commit, .. } = commit;
-    let last_updated = commit.author?.date?;
-    Some(DataFileInfo { url, sha, node_id, last_updated })
-  }
-}
-
-pub type UpdateInfo = HashMap<String, DataFileInfo>;
-
-/// Returns true if the new update info contains a more recent file entry than the old
-/// update info, or if the new update info contains an entry that the old one is missing.
-pub fn compare_update_info(new: &UpdateInfo, old: &UpdateInfo) -> bool {
-  new.iter().any(|(id, new_info)| {
-    old.get(id).map_or(true, |old_info| {
-      new_info.last_updated > old_info.last_updated
-    })
-  })
-}
-
 /// Encapsulates game data extracted from Arknights' game files.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GameData {
-  /// Lists information about the commit this `GameData` was created from.
-  pub update_info: UpdateInfo,
+  /// The time this GameData was updated, if it was created from a remote source.
+  pub last_updated: Option<DateTime<Utc>>,
   /// Lists all of the pairs of alternate operators that exist.
   pub alters: Vec<UOrd<String>>,
   /// A list of all obtainable operators in the game.
@@ -70,7 +40,7 @@ impl GameData {
   /// Note that the provided path should go to the `gamedata` folder, not the root folder of the repository.
   pub async fn from_local<P: AsRef<Path>>(path: P) -> Result<Self, crate::Error> {
     let data_files = crate::format::DataFiles::from_local(path.as_ref()).await?;
-    Ok(data_files.into_game_data(UpdateInfo::default()))
+    Ok(data_files.into_game_data(None))
   }
 
   /// Tries constructing a [`GameData`] from a remote GitHub repository.
@@ -85,10 +55,9 @@ impl GameData {
     options.patch_game_data(self).await
   }
 
-  /// Returns true if the given update info contains a more recent file entry than any
-  /// entries in this game data, or if the update info contains an entry not present here.
-  pub fn is_outdated(&self, new_update_info: &UpdateInfo) -> bool {
-    compare_update_info(new_update_info, &self.update_info)
+  /// Returns true if the given date time is more recent than the update time included in this game data.
+  pub fn is_outdated(&self, new_date_time: DateTime<Utc>) -> bool {
+    self.last_updated.map_or(true, |last_updated| last_updated < new_date_time)
   }
 
   /// Takes an operator ID, returns the operator ID if an alter exists corresponding to it.

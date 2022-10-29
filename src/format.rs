@@ -1,11 +1,12 @@
-pub(crate) mod building_data;
-pub(crate) mod character_meta_table;
-pub(crate) mod character_table;
-pub(crate) mod equip_table;
-pub(crate) mod handbook_info_table;
-pub(crate) mod item_table;
-pub(crate) mod skill_table;
+mod building_data;
+mod character_meta_table;
+mod character_table;
+mod equip_table;
+mod handbook_info_table;
+mod item_table;
+mod skill_table;
 
+use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
 use regex::{Regex, Captures};
 use serde::de::{Deserialize, DeserializeOwned, Deserializer};
@@ -26,52 +27,52 @@ use std::path::Path;
 
 
 
-pub(crate) type DataFilesTuple = (
-  CharacterTable,
-  CharacterMetaTable,
-  SkillTable,
+type DataFilesTuple = (
   BuildingData,
-  ItemTable,
+  CharacterMetaTable,
+  CharacterTable,
+  EquipTable,
   HandbookInfoTable,
-  EquipTable
+  ItemTable,
+  SkillTable
 );
 
 pub(crate) struct DataFiles {
-  character_table: CharacterTable,
-  character_meta_table: CharacterMetaTable,
-  skill_table: SkillTable,
   building_data: BuildingData,
-  item_table: ItemTable,
+  character_meta_table: CharacterMetaTable,
+  character_table: CharacterTable,
+  equip_table: EquipTable,
   handbook_info_table: HandbookInfoTable,
-  equip_table: EquipTable
+  item_table: ItemTable,
+  skill_table: SkillTable
 }
 
 impl DataFiles {
   pub(crate) async fn from_local(gamedata_dir: &Path) -> Result<Self, crate::Error> {
     tokio::try_join!(
-      crate::options::get_data_file_local::<CharacterTable>(gamedata_dir),
-      crate::options::get_data_file_local::<CharacterMetaTable>(gamedata_dir),
-      crate::options::get_data_file_local::<SkillTable>(gamedata_dir),
       crate::options::get_data_file_local::<BuildingData>(gamedata_dir),
-      crate::options::get_data_file_local::<ItemTable>(gamedata_dir),
+      crate::options::get_data_file_local::<CharacterMetaTable>(gamedata_dir),
+      crate::options::get_data_file_local::<CharacterTable>(gamedata_dir),
+      crate::options::get_data_file_local::<EquipTable>(gamedata_dir),
       crate::options::get_data_file_local::<HandbookInfoTable>(gamedata_dir),
-      crate::options::get_data_file_local::<EquipTable>(gamedata_dir)
+      crate::options::get_data_file_local::<ItemTable>(gamedata_dir),
+      crate::options::get_data_file_local::<SkillTable>(gamedata_dir)
     ).map(Self::from)
   }
 
   pub(crate) async fn from_remote(options: &Options) -> Result<Self, crate::Error> {
     tokio::try_join!(
-      crate::options::get_data_file_remote::<CharacterTable>(options),
-      crate::options::get_data_file_remote::<CharacterMetaTable>(options),
-      crate::options::get_data_file_remote::<SkillTable>(options),
       crate::options::get_data_file_remote::<BuildingData>(options),
-      crate::options::get_data_file_remote::<ItemTable>(options),
+      crate::options::get_data_file_remote::<CharacterMetaTable>(options),
+      crate::options::get_data_file_remote::<CharacterTable>(options),
+      crate::options::get_data_file_remote::<EquipTable>(options),
       crate::options::get_data_file_remote::<HandbookInfoTable>(options),
-      crate::options::get_data_file_remote::<EquipTable>(options)
+      crate::options::get_data_file_remote::<ItemTable>(options),
+      crate::options::get_data_file_remote::<SkillTable>(options)
     ).map(Self::from)
   }
 
-  pub(crate) fn into_game_data(mut self, update_info: UpdateInfo) -> GameData {
+  pub(crate) fn into_game_data(mut self, last_updated: Option<DateTime<Utc>>) -> GameData {
     let alters = self.character_meta_table.into_alters();
     let operators = recollect_filter(self.character_table, |(id, character)| {
       let operator = character.into_operator(
@@ -89,7 +90,7 @@ impl DataFiles {
     let buildings = self.building_data.into_buildings();
 
     GameData {
-      update_info,
+      last_updated,
       alters,
       operators,
       items,
@@ -99,15 +100,15 @@ impl DataFiles {
 }
 
 impl From<DataFilesTuple> for DataFiles {
-  fn from((ct, cmt, st, bd, it, hbit, et): DataFilesTuple) -> Self {
+  fn from((bd, cmt, ct, et, hbit, it, st): DataFilesTuple) -> Self {
     DataFiles {
-      character_table: ct,
-      character_meta_table: cmt,
-      skill_table: st,
       building_data: bd,
-      item_table: it,
+      character_meta_table: cmt,
+      character_table: ct,
+      equip_table: et,
       handbook_info_table: hbit,
-      equip_table: et
+      item_table: it,
+      skill_table: st
     }
   }
 }
@@ -171,7 +172,7 @@ fn deserialize_negative_int<'de, D: Deserializer<'de>>(deserializer: D) -> Resul
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct ItemCost {
+struct ItemCost {
   #[serde(rename = "id")]
   item_id: String,
   count: u32
@@ -184,13 +185,13 @@ impl ItemCost {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct CharCondition {
+struct CharCondition {
   phase: u32,
   level: u32
 }
 
 impl CharCondition {
-  pub(crate) fn into_promotion_and_level(self) -> PromotionAndLevel {
+  fn into_promotion_and_level(self) -> PromotionAndLevel {
     let CharCondition { phase, level } = self;
     let promotion = match phase {
       0 => Promotion::None,
