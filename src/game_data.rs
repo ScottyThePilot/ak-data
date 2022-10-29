@@ -4,10 +4,11 @@
 //! See the examples for usage help.
 
 use chrono::{DateTime, Utc};
+use mint::Point2;
 pub use uord::UOrd;
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Iter as HashMapIter;
 use std::iter::{Chain, Once};
 use std::num::NonZeroU8;
@@ -32,7 +33,9 @@ pub struct GameData {
   /// A list of all items in the game.
   pub items: HashMap<String, Item>,
   /// A list of all RIIC base buildings.
-  pub buildings: HashMap<BuildingType, Building>
+  pub buildings: HashMap<BuildingType, Building>,
+  /// A list of all operator attack ranges.
+  pub ranges: HashMap<String, AttackRange>
 }
 
 impl GameData {
@@ -213,6 +216,10 @@ impl OperatorPromotion {
     ItemsIter::new(&self.upgrade_cost, items)
   }
 
+  pub fn get_attack_range<'a>(&self, ranges: &'a HashMap<String, AttackRange>) -> Option<&'a AttackRange> {
+    self.attack_range_id.as_deref().and_then(|attack_range_id| ranges.get(attack_range_id))
+  }
+
   pub fn get_level_attributes(&self, level: u32) -> OperatorPromotionAttributes {
     OperatorPromotionAttributes {
       level,
@@ -354,6 +361,12 @@ pub struct OperatorSkillLevel {
   pub increment: f32
 }
 
+impl OperatorSkillLevel {
+  pub fn get_attack_range<'a>(&self, ranges: &'a HashMap<String, AttackRange>) -> Option<&'a AttackRange> {
+    self.attack_range_id.as_deref().and_then(|attack_range_id| ranges.get(attack_range_id))
+  }
+}
+
 /// An upgradeable mastery level of an operator's skill.
 ///
 /// Implements `Deref<Target = OperatorSkillLevel>` so that you can access
@@ -443,6 +456,10 @@ pub struct OperatorTalentPhase {
 impl OperatorTalentPhase {
   pub fn is_unlocked(&self, promotion_and_level: PromotionAndLevel, potential: u8) -> bool {
     self.condition <= promotion_and_level && self.required_potential <= potential
+  }
+
+  pub fn get_attack_range<'a>(&self, ranges: &'a HashMap<String, AttackRange>) -> Option<&'a AttackRange> {
+    self.attack_range_id.as_deref().and_then(|attack_range_id| ranges.get(attack_range_id))
   }
 }
 
@@ -781,6 +798,17 @@ impl OperatorFileUnlock {
       OperatorFileUnlock::PromotionLevel(condition) => *condition <= promotion_and_level,
       OperatorFileUnlock::OperatorUnlocked(..) => false
     }
+  }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AttackRange {
+  pub points: HashSet<Point2<i32>>
+}
+
+impl AttackRange {
+  pub fn contains(&self, point: impl Into<Point2<i32>>) -> bool {
+    self.points.contains(&point.into())
   }
 }
 

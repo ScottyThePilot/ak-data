@@ -4,6 +4,7 @@ mod character_table;
 mod equip_table;
 mod handbook_info_table;
 mod item_table;
+mod range_table;
 mod skill_table;
 
 use chrono::{DateTime, Utc};
@@ -17,6 +18,7 @@ use self::character_table::CharacterTable;
 use self::equip_table::EquipTable;
 use self::handbook_info_table::HandbookInfoTable;
 use self::item_table::ItemTable;
+use self::range_table::RangeTable;
 use self::skill_table::SkillTable;
 use crate::game_data::{GameData, Promotion, PromotionAndLevel};
 use crate::options::Options;
@@ -34,6 +36,7 @@ type DataFilesTuple = (
   EquipTable,
   HandbookInfoTable,
   ItemTable,
+  RangeTable,
   SkillTable
 );
 
@@ -44,6 +47,7 @@ pub(crate) struct DataFiles {
   equip_table: EquipTable,
   handbook_info_table: HandbookInfoTable,
   item_table: ItemTable,
+  range_table: RangeTable,
   skill_table: SkillTable
 }
 
@@ -56,6 +60,7 @@ impl DataFiles {
       crate::options::get_data_file_local::<EquipTable>(gamedata_dir),
       crate::options::get_data_file_local::<HandbookInfoTable>(gamedata_dir),
       crate::options::get_data_file_local::<ItemTable>(gamedata_dir),
+      crate::options::get_data_file_local::<RangeTable>(gamedata_dir),
       crate::options::get_data_file_local::<SkillTable>(gamedata_dir)
     ).map(Self::from)
   }
@@ -68,6 +73,7 @@ impl DataFiles {
       crate::options::get_data_file_remote::<EquipTable>(options),
       crate::options::get_data_file_remote::<HandbookInfoTable>(options),
       crate::options::get_data_file_remote::<ItemTable>(options),
+      crate::options::get_data_file_remote::<RangeTable>(options),
       crate::options::get_data_file_remote::<SkillTable>(options)
     ).map(Self::from)
   }
@@ -88,19 +94,23 @@ impl DataFiles {
 
     let items = self.item_table.into_items();
     let buildings = self.building_data.into_buildings();
+    let ranges = recollect(self.range_table, |(id, range_table_entry)| {
+      (id, range_table_entry.into_attack_range())
+    });
 
     GameData {
       last_updated,
       alters,
       operators,
       items,
-      buildings
+      buildings,
+      ranges
     }
   }
 }
 
 impl From<DataFilesTuple> for DataFiles {
-  fn from((bd, cmt, ct, et, hbit, it, st): DataFilesTuple) -> Self {
+  fn from((bd, cmt, ct, et, hbit, it, rt, st): DataFilesTuple) -> Self {
     DataFiles {
       building_data: bd,
       character_meta_table: cmt,
@@ -108,6 +118,7 @@ impl From<DataFilesTuple> for DataFiles {
       equip_table: et,
       handbook_info_table: hbit,
       item_table: it,
+      range_table: rt,
       skill_table: st
     }
   }

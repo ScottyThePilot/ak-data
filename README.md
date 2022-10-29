@@ -12,6 +12,7 @@ Currently this crate accomplishes the following things:
   - Parsing operator module info from `excel/uniequip_table.json`.
 - Parsing building info from `excel/building_data.json`.
 - Parsing the item list from `excel/item_table.json`.
+- Parsing attack range info from `excel/range_table.json`.
 
 Since unobtainable characters, static map objects and 'drone' characters are included
 in `excel/character_table.json`, this library filters them out for simplicity.
