@@ -98,12 +98,10 @@ impl DataFiles {
       operator.map(|operator| (id, operator))
     });
 
-    let gacha = self.gacha_table.into_gacha();
     let items = self.item_table.into_items();
     let buildings = self.building_data.into_buildings();
-    let ranges = recollect(self.range_table, |(id, range_table_entry)| {
-      (id, range_table_entry.into_attack_range())
-    });
+    let ranges = recollect(self.range_table, |(id, entry)| (id, entry.into_attack_range()));
+    let (recruitment_tags, headhunting_banners) = self.gacha_table.into_tags_and_banners();
 
     GameData {
       last_updated,
@@ -112,8 +110,8 @@ impl DataFiles {
       items,
       buildings,
       ranges,
-      recruitment_tags: gacha.recruitment_tags,
-      headhunting_banners: gacha.headhunting_banners
+      recruitment_tags,
+      headhunting_banners
     }
   }
 }

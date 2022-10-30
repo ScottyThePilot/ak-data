@@ -19,14 +19,10 @@ pub(crate) struct GachaTable {
 }
 
 impl GachaTable {
-  pub(super) fn into_gacha(self) -> Gacha {
+  pub(super) fn into_tags_and_banners(self) -> (HashMap<String, u32>, Vec<HeadhuntingBanner>) {
     let recruitment_tags = recollect(self.recruit_tags, GachaTableRecruitTag::into_entry);
-    let headhunting_banners = recollect(self.gacha_table_client, |gacha_pool| {
-      let headhunting_banner = gacha_pool.into_headhunting_banner();
-      (headhunting_banner.id.clone(), headhunting_banner)
-    });
-
-    Gacha { recruitment_tags, headhunting_banners }
+    let headhunting_banners = recollect(self.gacha_table_client, GachaTableGachaPool::into_headhunting_banner);
+    (recruitment_tags, headhunting_banners)
   }
 }
 
@@ -101,10 +97,4 @@ impl GachaTableGachaRuleType {
       GachaTableGachaRuleType::Attain => HeadhuntingBannerType::Special
     }
   }
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(super) struct Gacha {
-  pub(super) recruitment_tags: HashMap<String, u32>,
-  pub(super) headhunting_banners: HashMap<String, HeadhuntingBanner>
 }

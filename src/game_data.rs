@@ -39,7 +39,7 @@ pub struct GameData {
   /// A list of all recruitment tags.
   pub recruitment_tags: HashMap<String, u32>,
   /// A list of all past, current and future banners according to the game files.
-  pub headhunting_banners: HashMap<String, HeadhuntingBanner>
+  pub headhunting_banners: Vec<HeadhuntingBanner>
 }
 
 impl GameData {
@@ -95,19 +95,19 @@ impl GameData {
   /// Returns an iterator over all headhunting banners that have passed.
   #[inline]
   pub fn iter_past_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> {
-    self.headhunting_banners.values().filter(move |banner| banner.is_past(now))
+    self.headhunting_banners.iter().filter(move |banner| banner.is_past(now))
   }
 
   /// Returns an iterator over all headhunting banners that are currently open.
   #[inline]
   pub fn iter_current_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> {
-    self.headhunting_banners.values().filter(move |banner| banner.is_current(now))
+    self.headhunting_banners.iter().filter(move |banner| banner.is_current(now))
   }
 
   /// Returns an iterator over all headhunting banners that have yet to open, usually empty.
   #[inline]
   pub fn iter_future_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> {
-    self.headhunting_banners.values().filter(move |banner| banner.is_future(now))
+    self.headhunting_banners.iter().filter(move |banner| banner.is_future(now))
   }
 }
 
@@ -693,17 +693,17 @@ pub struct HeadhuntingBanner {
 }
 
 impl HeadhuntingBanner {
-  /// Whether this banner has already opened and closed
+  /// Whether this banner has already opened and closed.
   pub fn is_past(&self, now: DateTime<Utc>) -> bool {
     now >= self.close_time
   }
 
-  /// Whether this banner is currently open and has yet to close
+  /// Whether this banner is currently open and has yet to close.
   pub fn is_current(&self, now: DateTime<Utc>) -> bool {
     self.open_time <= now && now < self.close_time
   }
 
-  /// Whether this banner has yet to open
+  /// Whether this banner has yet to open.
   pub fn is_future(&self, now: DateTime<Utc>) -> bool {
     self.open_time > now
   }
