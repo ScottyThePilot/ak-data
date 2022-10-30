@@ -2,6 +2,7 @@ mod building_data;
 mod character_meta_table;
 mod character_table;
 mod equip_table;
+mod gacha_table;
 mod handbook_info_table;
 mod item_table;
 mod range_table;
@@ -16,6 +17,7 @@ use self::building_data::BuildingData;
 use self::character_meta_table::CharacterMetaTable;
 use self::character_table::CharacterTable;
 use self::equip_table::EquipTable;
+use self::gacha_table::GachaTable;
 use self::handbook_info_table::HandbookInfoTable;
 use self::item_table::ItemTable;
 use self::range_table::RangeTable;
@@ -34,6 +36,7 @@ type DataFilesTuple = (
   CharacterMetaTable,
   CharacterTable,
   EquipTable,
+  GachaTable,
   HandbookInfoTable,
   ItemTable,
   RangeTable,
@@ -45,6 +48,7 @@ pub(crate) struct DataFiles {
   character_meta_table: CharacterMetaTable,
   character_table: CharacterTable,
   equip_table: EquipTable,
+  gacha_table: GachaTable,
   handbook_info_table: HandbookInfoTable,
   item_table: ItemTable,
   range_table: RangeTable,
@@ -58,6 +62,7 @@ impl DataFiles {
       crate::options::get_data_file_local::<CharacterMetaTable>(gamedata_dir),
       crate::options::get_data_file_local::<CharacterTable>(gamedata_dir),
       crate::options::get_data_file_local::<EquipTable>(gamedata_dir),
+      crate::options::get_data_file_local::<GachaTable>(gamedata_dir),
       crate::options::get_data_file_local::<HandbookInfoTable>(gamedata_dir),
       crate::options::get_data_file_local::<ItemTable>(gamedata_dir),
       crate::options::get_data_file_local::<RangeTable>(gamedata_dir),
@@ -71,6 +76,7 @@ impl DataFiles {
       crate::options::get_data_file_remote::<CharacterMetaTable>(options),
       crate::options::get_data_file_remote::<CharacterTable>(options),
       crate::options::get_data_file_remote::<EquipTable>(options),
+      crate::options::get_data_file_remote::<GachaTable>(options),
       crate::options::get_data_file_remote::<HandbookInfoTable>(options),
       crate::options::get_data_file_remote::<ItemTable>(options),
       crate::options::get_data_file_remote::<RangeTable>(options),
@@ -92,6 +98,7 @@ impl DataFiles {
       operator.map(|operator| (id, operator))
     });
 
+    let gacha = self.gacha_table.into_gacha();
     let items = self.item_table.into_items();
     let buildings = self.building_data.into_buildings();
     let ranges = recollect(self.range_table, |(id, range_table_entry)| {
@@ -104,18 +111,21 @@ impl DataFiles {
       operators,
       items,
       buildings,
-      ranges
+      ranges,
+      recruitment_tags: gacha.recruitment_tags,
+      headhunting_banners: gacha.headhunting_banners
     }
   }
 }
 
 impl From<DataFilesTuple> for DataFiles {
-  fn from((bd, cmt, ct, et, hbit, it, rt, st): DataFilesTuple) -> Self {
+  fn from((bd, cmt, ct, et, gt, hbit, it, rt, st): DataFilesTuple) -> Self {
     DataFiles {
       building_data: bd,
       character_meta_table: cmt,
       character_table: ct,
       equip_table: et,
+      gacha_table: gt,
       handbook_info_table: hbit,
       item_table: it,
       range_table: rt,

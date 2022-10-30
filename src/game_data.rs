@@ -35,7 +35,11 @@ pub struct GameData {
   /// A list of all RIIC base buildings.
   pub buildings: HashMap<BuildingType, Building>,
   /// A list of all operator attack ranges.
-  pub ranges: HashMap<String, AttackRange>
+  pub ranges: HashMap<String, AttackRange>,
+  /// A list of all recruitment tags.
+  pub recruitment_tags: HashMap<String, u32>,
+  /// A list of all past, current and future banners according to the game files.
+  pub headhunting_banners: HashMap<String, HeadhuntingBanner>
 }
 
 impl GameData {
@@ -654,7 +658,33 @@ pub enum SubProfession {
   Swordmaster
 }
 
+/// A headhunting banner that existed or will exist at some point according to the game data.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeadhuntingBanner {
+  pub id: String,
+  pub name: String,
+  /// A string describing the time that this banner closes.
+  pub summary: String,
+  pub index: u32,
+  pub open_time: DateTime<Utc>,
+  pub close_time: DateTime<Utc>,
+  /// The ID of the 'Headhunting Data Contract' item (free 10-pull item)
+  /// associated with this banner, if it has one.
+  pub item_id: Option<String>,
+  pub banner_type: HeadhuntingBannerType
+}
 
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum HeadhuntingBannerType {
+  Normal,
+  /// Limited event banners.
+  Limited,
+  /// This corresponds with the `ATTAIN` and `LINKAGE` rules types defined in `gacha_table.json`,
+  /// which so far have only appeared on the "Celebrate & Recollect" (`ATTAIN`) and the
+  /// "Attack - Defence - Tactical Collide" R6S crossover banner (`LINKAGE`).
+  Special
+}
 
 /// Represents an RIIC base room that can exist.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
