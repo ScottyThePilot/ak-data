@@ -15,7 +15,7 @@ pub(crate) struct ItemTable {
 
 impl ItemTable {
   pub(super) fn into_items(self) -> HashMap<String, Item> {
-    recollect(self.items, |(id, item)| (id, item.into_item()))
+    recollect_map(self.items, ItemTableItem::into_item)
   }
 }
 

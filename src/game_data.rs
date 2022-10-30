@@ -39,7 +39,9 @@ pub struct GameData {
   /// A list of all recruitment tags.
   pub recruitment_tags: HashMap<String, u32>,
   /// A list of all past, current and future banners according to the game files.
-  pub headhunting_banners: Vec<HeadhuntingBanner>
+  pub headhunting_banners: Vec<HeadhuntingBanner>,
+  /// A list of all past, current and future events according to the game files.
+  pub events: HashMap<String, Event>
 }
 
 impl GameData {
@@ -108,6 +110,24 @@ impl GameData {
   #[inline]
   pub fn iter_future_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> {
     self.headhunting_banners.iter().filter(move |banner| banner.is_future(now))
+  }
+
+  /// Returns an iterator over all events that have passed.
+  #[inline]
+  pub fn iter_past_events(&self, now: DateTime<Utc>) -> impl Iterator<Item = &Event> {
+    self.events.values().filter(move |banner| banner.is_past(now))
+  }
+
+  /// Returns an iterator over all events that are currently open.
+  #[inline]
+  pub fn iter_current_events(&self, now: DateTime<Utc>) -> impl Iterator<Item = &Event> {
+    self.events.values().filter(move |banner| banner.is_current(now))
+  }
+
+  /// Returns an iterator over all events that have yet to open.
+  #[inline]
+  pub fn iter_future_events(&self, now: DateTime<Utc>) -> impl Iterator<Item = &Event> {
+    self.events.values().filter(move |banner| banner.is_future(now))
   }
 }
 
@@ -674,6 +694,51 @@ pub enum SubProfession {
   Musha,
   Reaper,
   Swordmaster
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Event {
+  pub id: String,
+  pub name: String,
+  pub event_type: EventType,
+  pub open_time: DateTime<Utc>,
+  pub close_time: DateTime<Utc>,
+  pub close_time_rewards: DateTime<Utc>,
+  pub is_rerun: bool
+}
+
+impl Event {
+  /// Whether this event has already opened and closed.
+  pub fn is_past(&self, now: DateTime<Utc>) -> bool {
+    now >= self.close_time_rewards
+  }
+
+  /// Whether this event is currently open and still has playable levels.
+  pub fn is_current_playable(&self, now: DateTime<Utc>) -> bool {
+    self.open_time <= now && now < self.close_time
+  }
+
+  /// Whether this event is currently open.
+  /// This includes the extra phase after an event ends when the shop is still accessable.
+  pub fn is_current(&self, now: DateTime<Utc>) -> bool {
+    self.open_time <= now && now < self.close_time_rewards
+  }
+
+  /// Whether this event has yet to open.
+  pub fn is_future(&self, now: DateTime<Utc>) -> bool {
+    self.open_time > now
+  }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum EventType {
+  /// For example: A Walk in the Dust, Darknights Memoir.
+  Intermezzi,
+  /// For example: Maria Nearl, Guide Ahead.
+  SideStory,
+  /// For example: Children of Ursus, Vigilo.
+  Vignette
 }
 
 /// A headhunting banner that existed or will exist at some point according to the game data.

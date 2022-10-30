@@ -1,3 +1,4 @@
+mod activity_table;
 mod building_data;
 mod character_meta_table;
 mod character_table;
@@ -13,6 +14,7 @@ use once_cell::sync::Lazy;
 use regex::{Regex, Captures};
 use serde::de::{Deserialize, DeserializeOwned, Deserializer};
 
+use self::activity_table::ActivityTable;
 use self::building_data::BuildingData;
 use self::character_meta_table::CharacterMetaTable;
 use self::character_table::CharacterTable;
@@ -32,6 +34,7 @@ use std::path::Path;
 
 
 type DataFilesTuple = (
+  ActivityTable,
   BuildingData,
   CharacterMetaTable,
   CharacterTable,
@@ -44,6 +47,7 @@ type DataFilesTuple = (
 );
 
 pub(crate) struct DataFiles {
+  activity_table: ActivityTable,
   building_data: BuildingData,
   character_meta_table: CharacterMetaTable,
   character_table: CharacterTable,
@@ -58,6 +62,7 @@ pub(crate) struct DataFiles {
 impl DataFiles {
   pub(crate) async fn from_local(gamedata_dir: &Path) -> Result<Self, crate::Error> {
     tokio::try_join!(
+      crate::options::get_data_file_local::<ActivityTable>(gamedata_dir),
       crate::options::get_data_file_local::<BuildingData>(gamedata_dir),
       crate::options::get_data_file_local::<CharacterMetaTable>(gamedata_dir),
       crate::options::get_data_file_local::<CharacterTable>(gamedata_dir),
@@ -72,6 +77,7 @@ impl DataFiles {
 
   pub(crate) async fn from_remote(options: &Options) -> Result<Self, crate::Error> {
     tokio::try_join!(
+      crate::options::get_data_file_remote::<ActivityTable>(options),
       crate::options::get_data_file_remote::<BuildingData>(options),
       crate::options::get_data_file_remote::<CharacterMetaTable>(options),
       crate::options::get_data_file_remote::<CharacterTable>(options),
@@ -100,8 +106,9 @@ impl DataFiles {
 
     let items = self.item_table.into_items();
     let buildings = self.building_data.into_buildings();
-    let ranges = recollect(self.range_table, |(id, entry)| (id, entry.into_attack_range()));
+    let ranges = recollect_map(self.range_table, |entry| entry.into_attack_range());
     let (recruitment_tags, headhunting_banners) = self.gacha_table.into_tags_and_banners();
+    let events = self.activity_table.into_events();
 
     GameData {
       last_updated,
@@ -111,14 +118,16 @@ impl DataFiles {
       buildings,
       ranges,
       recruitment_tags,
-      headhunting_banners
+      headhunting_banners,
+      events
     }
   }
 }
 
 impl From<DataFilesTuple> for DataFiles {
-  fn from((bd, cmt, ct, et, gt, hbit, it, rt, st): DataFilesTuple) -> Self {
+  fn from((at, bd, cmt, ct, et, gt, hbit, it, rt, st): DataFilesTuple) -> Self {
     DataFiles {
+      activity_table: at,
       building_data: bd,
       character_meta_table: cmt,
       character_table: ct,
@@ -298,6 +307,11 @@ where I: IntoIterator<Item = T>, C: FromIterator<U>, F: FnMut(T) -> U {
   i.into_iter().map(f).collect()
 }
 
+fn recollect_map<K, V, W, I, C, F>(i: I, mut f: F) -> C
+where I: IntoIterator<Item = (K, V)>, C: FromIterator<(K, W)>, F: FnMut(V) -> W {
+  i.into_iter().map(move |(k, v)| (k, f(v))).collect()
+}
+
 fn recollect_maybe<T, U, I, C, F>(i: I, f: F) -> Option<C>
 where I: IntoIterator<Item = T>, C: FromIterator<U>, F: FnMut(T) -> Option<U> {
   recollect(i, f)
@@ -306,4 +320,9 @@ where I: IntoIterator<Item = T>, C: FromIterator<U>, F: FnMut(T) -> Option<U> {
 fn recollect_filter<T, U, I, C, F>(i: I, f: F) -> C
 where I: IntoIterator<Item = T>, C: FromIterator<U>, F: FnMut(T) -> Option<U> {
   i.into_iter().filter_map(f).collect()
+}
+
+fn recollect_map_filter<K, V, W, I, C, F>(i: I, mut f: F) -> C
+where I: IntoIterator<Item = (K, V)>, C: FromIterator<(K, W)>, F: FnMut(V) -> Option<W> {
+  i.into_iter().filter_map(move |(k, v)| Some((k, f(v)?))).collect()
 }
