@@ -91,6 +91,24 @@ impl GameData {
       item.name.eq_ignore_ascii_case(item_name)
     })
   }
+
+  /// Returns an iterator over all headhunting banners that have passed.
+  #[inline]
+  pub fn iter_past_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> {
+    self.headhunting_banners.values().filter(move |banner| banner.is_past(now))
+  }
+
+  /// Returns an iterator over all headhunting banners that are currently open.
+  #[inline]
+  pub fn iter_current_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> {
+    self.headhunting_banners.values().filter(move |banner| banner.is_current(now))
+  }
+
+  /// Returns an iterator over all headhunting banners that have yet to open, usually empty.
+  #[inline]
+  pub fn iter_future_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> {
+    self.headhunting_banners.values().filter(move |banner| banner.is_future(now))
+  }
 }
 
 /// An operator.
@@ -674,6 +692,23 @@ pub struct HeadhuntingBanner {
   pub banner_type: HeadhuntingBannerType
 }
 
+impl HeadhuntingBanner {
+  /// Whether this banner has already opened and closed
+  pub fn is_past(&self, now: DateTime<Utc>) -> bool {
+    now >= self.close_time
+  }
+
+  /// Whether this banner is currently open and has yet to close
+  pub fn is_current(&self, now: DateTime<Utc>) -> bool {
+    self.open_time <= now && now < self.close_time
+  }
+
+  /// Whether this banner has yet to open
+  pub fn is_future(&self, now: DateTime<Utc>) -> bool {
+    self.open_time > now
+  }
+}
+
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum HeadhuntingBannerType {
@@ -775,6 +810,7 @@ pub struct OperatorFileEntry {
 }
 
 impl OperatorFileEntry {
+  #[inline]
   fn iter_text_lines(&self) -> impl Iterator<Item = &str> + DoubleEndedIterator {
     self.text.lines().map(str::trim).filter(|line| !line.is_empty())
   }

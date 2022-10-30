@@ -49,10 +49,10 @@ struct GachaTableGachaPool {
   #[serde(rename = "gachaIndex")]
   gacha_index: u32,
   #[serde(rename = "openTime")]
-  #[serde(with = "chrono::serde::ts_milliseconds")]
+  #[serde(with = "chrono::serde::ts_seconds")]
   open_time: DateTime<Utc>,
   #[serde(rename = "endTime")]
-  #[serde(with = "chrono::serde::ts_milliseconds")]
+  #[serde(with = "chrono::serde::ts_seconds")]
   end_time: DateTime<Utc>,
   #[serde(rename = "gachaPoolName")]
   gacha_pool_name: String,
