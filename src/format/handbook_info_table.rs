@@ -116,9 +116,11 @@ impl<'de> Deserialize<'de> for HandbookStoryUnlockParam {
     }
 
     #[inline]
-    fn try_parse_char_condition(v: &str) -> Option<(u32, u32)> {
+    fn try_parse_char_condition(v: &str) -> Option<(CharPhase, u32)> {
       v.split_once(';').and_then(|(phase, level)| {
-        Some((phase.parse().ok()?, level.parse().ok()?))
+        let phase = phase.parse().ok().and_then(CharPhase::from_u32);
+        let level = level.parse().ok();
+        Option::zip(phase, level)
       })
     }
 

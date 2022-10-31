@@ -35,33 +35,37 @@ use std::path::Path;
 
 
 
-type DataFilesTuple = (
-  ActivityTable,
-  BuildingData,
-  CharacterMetaTable,
-  CharacterTable,
-  EquipTable,
-  GachaTable,
-  HandbookInfoTable,
-  ItemTable,
-  RangeTable,
-  SkillTable,
-  SkinTable
-);
+macro_rules! struct_from_tuple {
+  ($(#[$attr:meta])* $sv:vis struct $Ident:ident {
+    $($fv:vis $field:ident: $Field:ty),* $(,)?
+  }) => {
+    $(#[$attr])* $sv struct $Ident {
+      $($fv $field: $Field,)*
+    }
 
-#[derive(Debug)]
-pub(crate) struct DataFiles {
-  activity_table: ActivityTable,
-  building_data: BuildingData,
-  character_meta_table: CharacterMetaTable,
-  character_table: CharacterTable,
-  equip_table: EquipTable,
-  gacha_table: GachaTable,
-  handbook_info_table: HandbookInfoTable,
-  item_table: ItemTable,
-  range_table: RangeTable,
-  skill_table: SkillTable,
-  skin_table: SkinTable
+    impl $Ident {
+      fn from_tuple(($($field,)*): ($($Field,)*)) -> Self {
+        $Ident { $($field,)* }
+      }
+    }
+  };
+}
+
+struct_from_tuple! {
+  #[derive(Debug)]
+  pub(crate) struct DataFiles {
+    activity_table: ActivityTable,
+    building_data: BuildingData,
+    character_meta_table: CharacterMetaTable,
+    character_table: CharacterTable,
+    equip_table: EquipTable,
+    gacha_table: GachaTable,
+    handbook_info_table: HandbookInfoTable,
+    item_table: ItemTable,
+    range_table: RangeTable,
+    skill_table: SkillTable,
+    skin_table: SkinTable
+  }
 }
 
 impl DataFiles {
@@ -78,7 +82,7 @@ impl DataFiles {
       crate::options::get_data_file_local::<RangeTable>(gamedata_dir),
       crate::options::get_data_file_local::<SkillTable>(gamedata_dir),
       crate::options::get_data_file_local::<SkinTable>(gamedata_dir)
-    ).map(Self::from)
+    ).map(Self::from_tuple)
   }
 
   pub(crate) async fn from_remote(options: &Options) -> Result<Self, crate::Error> {
@@ -94,7 +98,7 @@ impl DataFiles {
       crate::options::get_data_file_remote::<RangeTable>(options),
       crate::options::get_data_file_remote::<SkillTable>(options),
       crate::options::get_data_file_remote::<SkinTable>(options)
-    ).map(Self::from)
+    ).map(Self::from_tuple)
   }
 
   pub(crate) fn into_game_data(mut self, last_updated: Option<DateTime<Utc>>) -> GameData {
@@ -130,24 +134,6 @@ impl DataFiles {
       recruitment_tags,
       headhunting_banners,
       events
-    }
-  }
-}
-
-impl From<DataFilesTuple> for DataFiles {
-  fn from(tup: DataFilesTuple) -> Self {
-    DataFiles {
-      activity_table: tup.0,
-      building_data: tup.1,
-      character_meta_table: tup.2,
-      character_table: tup.3,
-      equip_table: tup.4,
-      gacha_table: tup.5,
-      handbook_info_table: tup.6,
-      item_table: tup.7,
-      range_table: tup.8,
-      skill_table: tup.9,
-      skin_table: tup.10
     }
   }
 }
@@ -225,21 +211,53 @@ impl ItemCost {
 
 #[derive(Debug, Clone, Deserialize)]
 struct CharCondition {
-  phase: u32,
+  phase: CharPhase,
   level: u32
 }
 
 impl CharCondition {
   fn into_promotion_and_level(self) -> PromotionAndLevel {
     let CharCondition { phase, level } = self;
-    let promotion = match phase {
-      0 => Promotion::None,
-      1 => Promotion::Elite1,
-      2 => Promotion::Elite2,
-      p => panic!("invalid promotion {p:?}")
-    };
-
+    let promotion = phase.into_promotion();
     PromotionAndLevel { promotion, level }
+  }
+}
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy)]
+enum CharPhase {
+  Elite0 = 0,
+  Elite1 = 1,
+  Elite2 = 2
+}
+
+impl CharPhase {
+  fn into_promotion(self) -> Promotion {
+    match self {
+      CharPhase::Elite0 => Promotion::None,
+      CharPhase::Elite1 => Promotion::Elite1,
+      CharPhase::Elite2 => Promotion::Elite2
+    }
+  }
+
+  fn from_u32(num: u32) -> Option<Self> {
+    match num {
+      0 => Some(CharPhase::Elite0),
+      1 => Some(CharPhase::Elite1),
+      2 => Some(CharPhase::Elite2),
+      _ => None
+    }
+  }
+}
+
+impl_deserialize_uint_enum! {
+  CharPhase,
+  CharPhaseVisitor,
+  "a positive integer, one of 0, 1, or 2",
+  match {
+    0 => CharPhase::Elite0,
+    1 => CharPhase::Elite1,
+    2 => CharPhase::Elite2
   }
 }
 

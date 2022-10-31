@@ -38,7 +38,7 @@ struct EquipTableEquip {
   #[serde(rename = "uniEquipDesc")]
   description: String,
   #[serde(rename = "unlockEvolvePhase")]
-  unlock_phase: EquipTablePhase,
+  unlock_phase: CharPhase,
   #[serde(rename = "unlockLevel")]
   unlock_level: u32,
   #[serde(rename = "unlockFavorPoint")]
@@ -84,35 +84,6 @@ impl EquipTableMission {
       description: self.description,
       sort: self.sort
     }
-  }
-}
-
-#[repr(u8)]
-#[derive(Debug, Clone, Copy)]
-enum EquipTablePhase {
-  Elite0 = 0,
-  Elite1 = 1,
-  Elite2 = 2
-}
-
-impl EquipTablePhase {
-  fn into_promotion(self) -> Promotion {
-    match self {
-      EquipTablePhase::Elite0 => Promotion::None,
-      EquipTablePhase::Elite1 => Promotion::Elite1,
-      EquipTablePhase::Elite2 => Promotion::Elite2
-    }
-  }
-}
-
-impl_deserialize_uint_enum! {
-  EquipTablePhase,
-  EquipTablePhaseVisitor,
-  "a positive integer, one of 0, 1, or 2",
-  match {
-    0 => EquipTablePhase::Elite0,
-    1 => EquipTablePhase::Elite1,
-    2 => EquipTablePhase::Elite2
   }
 }
 
