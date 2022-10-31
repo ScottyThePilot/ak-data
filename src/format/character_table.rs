@@ -1,5 +1,6 @@
 use crate::format::*;
 use crate::format::skill_table::SkillTableLevel;
+use crate::format::skin_table::SkinTableMapped;
 use crate::game_data::*;
 
 use std::collections::HashMap;
@@ -11,6 +12,15 @@ impl DataFile for CharacterTable {
 }
 
 pub(crate) type CharacterTable = HashMap<String, CharacterTableEntry>;
+
+#[derive(Debug)]
+pub(super) struct AdditionalData<'a> {
+  pub(super) building_data: &'a BuildingData,
+  pub(super) equip_table: &'a mut EquipTable,
+  pub(super) handbook_info_table: &'a mut HandbookInfoTable,
+  pub(super) skill_table: &'a SkillTable,
+  pub(super) skin_table: &'a mut SkinTableMapped
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub(crate) struct CharacterTableEntry {
@@ -51,32 +61,33 @@ pub(crate) struct CharacterTableEntry {
 }
 
 impl CharacterTableEntry {
-  pub(super) fn into_operator(
-    self,
-    id: String,
-    building_data: &super::BuildingData,
-    skill_table: &super::SkillTable,
-    handbook_info_table: &mut super::HandbookInfoTable,
-    equip_table: &mut super::EquipTable
-  ) -> Option<Operator> {
+  pub(super) fn into_operator(self, id: String, data: AdditionalData) -> Option<Operator> {
     if self.is_unobtainable { return None };
     let display_number = self.display_number?;
     let profession = self.profession.into_profession()?;
     let sub_profession = self.sub_profession.into_sub_profession()?;
     let position = self.position.into_position()?;
 
+    let skin_table_entry = match data.skin_table.take_character_entry(&id) {
+      Some(skin_table_entry) => skin_table_entry,
+      None => { println!("{} discarded", self.name); return None }
+    };
+
     let mut promotions = self.phases.into_iter()
-      .map(CharacterTablePhase::into_operator_promotion);
+      .zip(skin_table_entry.default_skins.into_iter())
+      .map(|(phase, skin)| phase.into_operator_promotion(skin));
     let promotion_none = promotions.next()?;
     let promotion_elite1 = promotions.next();
     let promotion_elite2 = promotions.next();
 
     let potential = recollect(self.potential_ranks, CharacterTablePotentialRank::into_operator_potential);
-    let skills = recollect_maybe(self.skills, |character_table_skill| character_table_skill.into_operator_skill(skill_table))?;
+    let skills = recollect_maybe(self.skills, |character_table_skill| {
+      character_table_skill.into_operator_skill(data.skill_table)
+    })?;
     let talents = recollect_maybe(self.talents, CharacterTableTalent::into_operator_talent)?;
-    let modules = equip_table.take_operator_modules(&id).unwrap_or_default();
-    let base_skills = building_data.get_operator_base_skill(&id);
-    let file = handbook_info_table.take_operator_file(&id)?;
+    let modules = data.equip_table.take_operator_modules(&id).unwrap_or_default();
+    let base_skills = data.building_data.get_operator_base_skill(&id);
+    let file = data.handbook_info_table.take_operator_file(&id)?;
 
     Some(Operator {
       id,
@@ -102,6 +113,7 @@ impl CharacterTableEntry {
       talents,
       modules,
       base_skills,
+      skins: skin_table_entry.skins,
       trust_bonus: match self.favor_key_frames {
         Some([_, keyframe]) => keyframe.into_operator_trust_attributes(),
         None => OperatorTrustAttributes::default()
@@ -125,14 +137,15 @@ struct CharacterTablePhase {
 }
 
 impl CharacterTablePhase {
-  fn into_operator_promotion(self) -> OperatorPromotion {
+  fn into_operator_promotion(self, skin_id: Option<String>) -> OperatorPromotion {
     let [min_attributes, max_attributes] = self.attributes_key_frames;
     OperatorPromotion {
       attack_range_id: self.range_id,
       min_attributes: min_attributes.into_operator_promotion_attributes(),
       max_attributes: max_attributes.into_operator_promotion_attributes(),
       max_level: self.max_level,
-      upgrade_cost: ItemCost::convert(self.upgrade_cost)
+      upgrade_cost: ItemCost::convert(self.upgrade_cost),
+      skin_id
     }
   }
 }

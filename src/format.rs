@@ -8,6 +8,7 @@ mod handbook_info_table;
 mod item_table;
 mod range_table;
 mod skill_table;
+mod skin_table;
 
 use chrono::{DateTime, Utc};
 use once_cell::sync::Lazy;
@@ -24,6 +25,7 @@ use self::handbook_info_table::HandbookInfoTable;
 use self::item_table::ItemTable;
 use self::range_table::RangeTable;
 use self::skill_table::SkillTable;
+use self::skin_table::SkinTable;
 use crate::game_data::{GameData, Promotion, PromotionAndLevel};
 use crate::options::Options;
 
@@ -43,9 +45,11 @@ type DataFilesTuple = (
   HandbookInfoTable,
   ItemTable,
   RangeTable,
-  SkillTable
+  SkillTable,
+  SkinTable
 );
 
+#[derive(Debug)]
 pub(crate) struct DataFiles {
   activity_table: ActivityTable,
   building_data: BuildingData,
@@ -56,7 +60,8 @@ pub(crate) struct DataFiles {
   handbook_info_table: HandbookInfoTable,
   item_table: ItemTable,
   range_table: RangeTable,
-  skill_table: SkillTable
+  skill_table: SkillTable,
+  skin_table: SkinTable
 }
 
 impl DataFiles {
@@ -71,7 +76,8 @@ impl DataFiles {
       crate::options::get_data_file_local::<HandbookInfoTable>(gamedata_dir),
       crate::options::get_data_file_local::<ItemTable>(gamedata_dir),
       crate::options::get_data_file_local::<RangeTable>(gamedata_dir),
-      crate::options::get_data_file_local::<SkillTable>(gamedata_dir)
+      crate::options::get_data_file_local::<SkillTable>(gamedata_dir),
+      crate::options::get_data_file_local::<SkinTable>(gamedata_dir)
     ).map(Self::from)
   }
 
@@ -86,21 +92,23 @@ impl DataFiles {
       crate::options::get_data_file_remote::<HandbookInfoTable>(options),
       crate::options::get_data_file_remote::<ItemTable>(options),
       crate::options::get_data_file_remote::<RangeTable>(options),
-      crate::options::get_data_file_remote::<SkillTable>(options)
+      crate::options::get_data_file_remote::<SkillTable>(options),
+      crate::options::get_data_file_remote::<SkinTable>(options)
     ).map(Self::from)
   }
 
   pub(crate) fn into_game_data(mut self, last_updated: Option<DateTime<Utc>>) -> GameData {
     let alters = self.character_meta_table.into_alters();
+    let mut skin_table_mapped = self.skin_table.into_skin_table_mapped();
     let operators = recollect_filter(self.character_table, |(id, character)| {
       Some((id.clone(), {
-        character.into_operator(
-          id.clone(),
-          &self.building_data,
-          &self.skill_table,
-          &mut self.handbook_info_table,
-          &mut self.equip_table
-        )?
+        character.into_operator(id, self::character_table::AdditionalData {
+          building_data: &self.building_data,
+          equip_table: &mut self.equip_table,
+          handbook_info_table: &mut self.handbook_info_table,
+          skill_table: &self.skill_table,
+          skin_table: &mut skin_table_mapped
+        })?
       }))
     });
 
@@ -127,18 +135,19 @@ impl DataFiles {
 }
 
 impl From<DataFilesTuple> for DataFiles {
-  fn from((at, bd, cmt, ct, et, gt, hbit, it, rt, st): DataFilesTuple) -> Self {
+  fn from(tup: DataFilesTuple) -> Self {
     DataFiles {
-      activity_table: at,
-      building_data: bd,
-      character_meta_table: cmt,
-      character_table: ct,
-      equip_table: et,
-      gacha_table: gt,
-      handbook_info_table: hbit,
-      item_table: it,
-      range_table: rt,
-      skill_table: st
+      activity_table: tup.0,
+      building_data: tup.1,
+      character_meta_table: tup.2,
+      character_table: tup.3,
+      equip_table: tup.4,
+      gacha_table: tup.5,
+      handbook_info_table: tup.6,
+      item_table: tup.7,
+      range_table: tup.8,
+      skill_table: tup.9,
+      skin_table: tup.10
     }
   }
 }

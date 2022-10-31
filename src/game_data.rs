@@ -174,6 +174,7 @@ pub struct Operator {
   pub talents: Vec<OperatorTalent>,
   /// The list of non-default modules for this operator.
   pub modules: Vec<OperatorModule>,
+  pub skins: HashMap<String, OperatorSkin>,
   pub base_skills: Vec<OperatorBaseSkill>,
   pub trust_bonus: OperatorTrustAttributes,
   pub file: OperatorFile
@@ -182,6 +183,12 @@ pub struct Operator {
 impl Operator {
   pub fn get_potential_item<'a>(&self, items: &'a HashMap<String, Item>) -> Option<&'a Item> {
     self.potential_item_id.as_deref().and_then(|item_id| items.get(item_id))
+  }
+
+  pub fn iter_default_skins<'a>(&'a self) -> impl Iterator<Item = &'a OperatorSkin> + DoubleEndedIterator {
+    self.promotions.iter().filter_map(|promotion| {
+      promotion.skin_id.as_deref().and_then(|default_skin_id| self.skins.get(default_skin_id))
+    })
   }
 }
 
@@ -249,7 +256,9 @@ pub struct OperatorPromotion {
   pub min_attributes: OperatorPromotionAttributes,
   pub max_attributes: OperatorPromotionAttributes,
   pub max_level: u32,
-  pub upgrade_cost: HashMap<String, u32>
+  pub upgrade_cost: HashMap<String, u32>,
+  /// The skin unlocked at this promotion level.
+  pub skin_id: Option<String>
 }
 
 impl OperatorPromotion {
@@ -557,6 +566,25 @@ pub enum OperatorBaseSkillCategory {
   Function,
   Recovery,
   Output
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct OperatorSkin {
+  pub id: String,
+  pub name: Option<String>,
+  pub model_id: String,
+  pub model_name: String,
+  pub is_paid: bool,
+  pub illustration_id: String,
+  pub illustration_live_id: Option<String>,
+  pub avatar_id: String,
+  pub portrait_id: String,
+  pub illustrator: String,
+  pub group: String,
+  pub dialog: Option<String>,
+  pub usage: Option<String>,
+  pub description: Option<String>,
+  pub obtain: Option<String>
 }
 
 /// Indicates whether an operator is primarily melee or primarily ranged.
