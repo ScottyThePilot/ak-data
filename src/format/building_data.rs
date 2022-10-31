@@ -12,14 +12,14 @@ impl DataFile for BuildingData {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct BuildingData {
+pub(super) struct BuildingData {
   rooms: HashMap<String, BuildingDataRoom>,
   chars: HashMap<String, BuildingDataChar>,
   buffs: HashMap<String, BuildingDataBuff>
 }
 
 impl BuildingData {
-  pub(super) fn into_buildings(self) -> HashMap<BuildingType, Building> {
+  pub(super) fn into_buildings(self) -> crate::Map<BuildingType, Building> {
     self.rooms.into_values()
       .map(|building_data_room| {
         (building_data_room.id.into_building_type(), building_data_room.into_building())

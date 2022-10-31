@@ -10,10 +10,10 @@ impl DataFile for RangeTable {
   const IDENTIFIER: &'static str = "range_table";
 }
 
-pub(crate) type RangeTable = HashMap<String, RangeTableEntry>;
+pub(super) type RangeTable = HashMap<String, RangeTableEntry>;
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct RangeTableEntry {
+pub(super) struct RangeTableEntry {
   // omitted `direction`, it seems to only be 1 for every entry
   grids: Vec<RangeTableGridPoint>
 }

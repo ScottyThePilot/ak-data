@@ -10,7 +10,7 @@ impl DataFile for SkinTable {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct SkinTable {
+pub(super) struct SkinTable {
   #[serde(rename = "charSkins")]
   character_skins: HashMap<String, SkinTableCharacterSkin>,
   #[serde(rename = "buildinEvolveMap")]
@@ -45,7 +45,7 @@ fn take_default_skins(default_evolve_map: &mut HashMap<String, SkinTableEvolutio
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SkinTableMapped {
+pub(super) struct SkinTableMapped {
   characters: HashMap<String, SkinTableCharacterEntry>
 }
 
@@ -56,15 +56,15 @@ impl SkinTableMapped {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct SkinTableCharacterEntry {
-  pub(super) skins: HashMap<String, OperatorSkin>,
+pub(super) struct SkinTableCharacterEntry {
+  pub(super) skins: crate::Map<String, OperatorSkin>,
   pub(super) default_skins: [Option<String>; 3]
 }
 
 impl SkinTableCharacterEntry {
   fn new(default_skins: [Option<String>; 3]) -> Self {
     SkinTableCharacterEntry {
-      skins: HashMap::new(),
+      skins: crate::Map::new(),
       default_skins
     }
   }

@@ -11,7 +11,7 @@ impl DataFile for ActivityTable {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct ActivityTable {
+pub(super) struct ActivityTable {
   #[serde(rename = "basicInfo")]
   basic_info: HashMap<String, ActivityTableBasicInfoEntry>
 }

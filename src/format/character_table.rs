@@ -11,7 +11,7 @@ impl DataFile for CharacterTable {
   const IDENTIFIER: &'static str = "character_table";
 }
 
-pub(crate) type CharacterTable = HashMap<String, CharacterTableEntry>;
+pub(super) type CharacterTable = HashMap<String, CharacterTableEntry>;
 
 #[derive(Debug)]
 pub(super) struct AdditionalData<'a> {
@@ -23,7 +23,7 @@ pub(super) struct AdditionalData<'a> {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct CharacterTableEntry {
+pub(super) struct CharacterTableEntry {
   name: String,
   #[serde(rename = "potentialItemId")]
   #[serde(deserialize_with = "deserialize_maybe_empty_str")]
@@ -367,7 +367,7 @@ struct CharacterTableTalentBlackboard {
 }
 
 impl CharacterTableTalentBlackboard {
-  fn convert(blackboard: Vec<Self>) -> HashMap<String, f32> {
+  fn convert(blackboard: Vec<Self>) -> crate::Map<String, f32> {
     recollect(blackboard, |item| (item.key, item.value))
   }
 }

@@ -9,12 +9,12 @@ impl DataFile for ItemTable {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct ItemTable {
+pub(super) struct ItemTable {
   items: HashMap<String, ItemTableItem>
 }
 
 impl ItemTable {
-  pub(super) fn into_items(self) -> HashMap<String, Item> {
+  pub(super) fn into_items(self) -> crate::Map<String, Item> {
     recollect_map(self.items, ItemTableItem::into_item)
   }
 }

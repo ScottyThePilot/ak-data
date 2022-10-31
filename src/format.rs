@@ -204,7 +204,7 @@ struct ItemCost {
 }
 
 impl ItemCost {
-  fn convert(item_cost: Vec<Self>) -> HashMap<String, u32> {
+  fn convert(item_cost: Vec<Self>) -> crate::Map<String, u32> {
     recollect(item_cost, |item| (item.item_id, item.count))
   }
 }

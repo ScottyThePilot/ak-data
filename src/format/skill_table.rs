@@ -8,10 +8,10 @@ impl DataFile for SkillTable {
   const IDENTIFIER: &'static str = "skill_table";
 }
 
-pub(crate) type SkillTable = HashMap<String, SkillTableEntry>;
+pub(super) type SkillTable = HashMap<String, SkillTableEntry>;
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct SkillTableEntry {
+pub(super) struct SkillTableEntry {
   levels: Vec<SkillTableLevel>
 }
 

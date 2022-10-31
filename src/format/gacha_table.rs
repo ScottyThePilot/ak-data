@@ -3,15 +3,13 @@ use chrono::{DateTime, Utc};
 use crate::format::*;
 use crate::game_data::{HeadhuntingBanner, HeadhuntingBannerType};
 
-use std::collections::HashMap;
-
 impl DataFile for GachaTable {
   const LOCATION: &'static str = "excel/gacha_table.json";
   const IDENTIFIER: &'static str = "gacha_table";
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct GachaTable {
+pub(super) struct GachaTable {
   #[serde(rename = "gachaTags")]
   recruit_tags: Vec<GachaTableRecruitTag>,
   #[serde(rename = "gachaPoolClient")]
@@ -19,7 +17,7 @@ pub(crate) struct GachaTable {
 }
 
 impl GachaTable {
-  pub(super) fn into_tags_and_banners(self) -> (HashMap<String, u32>, Vec<HeadhuntingBanner>) {
+  pub(super) fn into_tags_and_banners(self) -> (crate::Map<String, u32>, Vec<HeadhuntingBanner>) {
     let recruitment_tags = recollect(self.recruit_tags, GachaTableRecruitTag::into_entry);
     let headhunting_banners = recollect(self.gacha_table_client, GachaTableGachaPool::into_headhunting_banner);
     (recruitment_tags, headhunting_banners)

@@ -9,7 +9,7 @@ impl DataFile for EquipTable {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct EquipTable {
+pub(super) struct EquipTable {
   #[serde(rename = "equipDict")]
   equip_list: HashMap<String, EquipTableEquip>,
   #[serde(rename = "missionList")]

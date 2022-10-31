@@ -23,6 +23,10 @@ pub mod options;
 pub use crate::game_data::GameData;
 pub use crate::options::{Options, Region};
 
+pub(crate) type Map<K, V> = std::collections::BTreeMap<K, V>;
+pub(crate) type Set<T> = std::collections::BTreeSet<T>;
+pub(crate) type MapIter<'a, K, V> = <&'a Map<K, V> as IntoIterator>::IntoIter;
+
 #[derive(Debug, Error)]
 pub enum Error {
   #[error(transparent)]

@@ -12,7 +12,7 @@ impl DataFile for HandbookInfoTable {
 
 #[repr(transparent)]
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct HandbookInfoTable {
+pub(super) struct HandbookInfoTable {
   #[serde(rename = "handbookDict")]
   handbook_dict: HashMap<String, HandbookInfoTableEntry>
 }

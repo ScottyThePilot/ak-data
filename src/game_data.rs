@@ -8,14 +8,13 @@ use mint::Point2;
 pub use uord::UOrd;
 
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
-use std::collections::hash_map::Iter as HashMapIter;
 use std::iter::{Chain, DoubleEndedIterator, Once};
 use std::num::NonZeroU8;
 use std::option::IntoIter as OptionIter;
 use std::ops::Deref;
 use std::path::Path;
 
+use crate::{Map, MapIter, Set};
 use crate::options::Options;
 
 
@@ -29,15 +28,15 @@ pub struct GameData {
   /// Lists all of the pairs of alternate operators that exist.
   pub alters: Vec<UOrd<String>>,
   /// A list of all obtainable operators in the game.
-  pub operators: HashMap<String, Operator>,
+  pub operators: Map<String, Operator>,
   /// A list of all items in the game.
-  pub items: HashMap<String, Item>,
+  pub items: Map<String, Item>,
   /// A list of all RIIC base buildings.
-  pub buildings: HashMap<BuildingType, Building>,
+  pub buildings: Map<BuildingType, Building>,
   /// A list of all operator attack ranges.
-  pub ranges: HashMap<String, AttackRange>,
+  pub ranges: Map<String, AttackRange>,
   /// A list of all recruitment tags.
-  pub recruitment_tags: HashMap<String, u32>,
+  pub recruitment_tags: Map<String, u32>,
   /// A list of all past, current and future banners according to the game files, sorted from oldest to newest.
   pub headhunting_banners: Vec<HeadhuntingBanner>,
   /// A list of all past, current and future events according to the game files, sorted from oldest to newest.
@@ -174,14 +173,14 @@ pub struct Operator {
   pub talents: Vec<OperatorTalent>,
   /// The list of non-default modules for this operator.
   pub modules: Vec<OperatorModule>,
-  pub skins: HashMap<String, OperatorSkin>,
+  pub skins: Map<String, OperatorSkin>,
   pub base_skills: Vec<OperatorBaseSkill>,
   pub trust_bonus: OperatorTrustAttributes,
   pub file: OperatorFile
 }
 
 impl Operator {
-  pub fn get_potential_item<'a>(&self, items: &'a HashMap<String, Item>) -> Option<&'a Item> {
+  pub fn get_potential_item<'a>(&self, items: &'a Map<String, Item>) -> Option<&'a Item> {
     self.potential_item_id.as_deref().and_then(|item_id| items.get(item_id))
   }
 
@@ -256,18 +255,18 @@ pub struct OperatorPromotion {
   pub min_attributes: OperatorPromotionAttributes,
   pub max_attributes: OperatorPromotionAttributes,
   pub max_level: u32,
-  pub upgrade_cost: HashMap<String, u32>,
+  pub upgrade_cost: Map<String, u32>,
   /// The skin unlocked at this promotion level.
   pub skin_id: Option<String>
 }
 
 impl OperatorPromotion {
   #[inline]
-  pub fn iter_upgrade_cost<'a>(&'a self, items: &'a HashMap<String, Item>) -> ItemsIter<'a> {
+  pub fn iter_upgrade_cost<'a>(&'a self, items: &'a Map<String, Item>) -> ItemsIter<'a> {
     ItemsIter::new(&self.upgrade_cost, items)
   }
 
-  pub fn get_attack_range<'a>(&self, ranges: &'a HashMap<String, AttackRange>) -> Option<&'a AttackRange> {
+  pub fn get_attack_range<'a>(&self, ranges: &'a Map<String, AttackRange>) -> Option<&'a AttackRange> {
     self.attack_range_id.as_deref().and_then(|attack_range_id| ranges.get(attack_range_id))
   }
 
@@ -406,7 +405,7 @@ pub struct OperatorSkillLevel {
 }
 
 impl OperatorSkillLevel {
-  pub fn get_attack_range<'a>(&self, ranges: &'a HashMap<String, AttackRange>) -> Option<&'a AttackRange> {
+  pub fn get_attack_range<'a>(&self, ranges: &'a Map<String, AttackRange>) -> Option<&'a AttackRange> {
     self.attack_range_id.as_deref().and_then(|attack_range_id| ranges.get(attack_range_id))
   }
 }
@@ -419,7 +418,7 @@ impl OperatorSkillLevel {
 pub struct OperatorSkillMastery {
   pub condition: PromotionAndLevel,
   pub upgrade_time: u32,
-  pub upgrade_cost: HashMap<String, u32>,
+  pub upgrade_cost: Map<String, u32>,
   pub level: OperatorSkillLevel
 }
 
@@ -439,7 +438,7 @@ impl OperatorSkillMastery {
   }
 
   #[inline]
-  pub fn iter_upgrade_cost<'a>(&'a self, items: &'a HashMap<String, Item>) -> ItemsIter<'a> {
+  pub fn iter_upgrade_cost<'a>(&'a self, items: &'a Map<String, Item>) -> ItemsIter<'a> {
     ItemsIter::new(&self.upgrade_cost, items)
   }
 }
@@ -493,7 +492,7 @@ pub struct OperatorTalentPhase {
   ///   There's no discernible pattern here, maybe a "special" talent marker?
   pub prefab_key: String,
   pub attack_range_id: Option<String>,
-  pub effects: HashMap<String, f32>
+  pub effects: Map<String, f32>
 }
 
 impl OperatorTalentPhase {
@@ -501,7 +500,7 @@ impl OperatorTalentPhase {
     self.condition <= promotion_and_level && self.required_potential <= potential
   }
 
-  pub fn get_attack_range<'a>(&self, ranges: &'a HashMap<String, AttackRange>) -> Option<&'a AttackRange> {
+  pub fn get_attack_range<'a>(&self, ranges: &'a Map<String, AttackRange>) -> Option<&'a AttackRange> {
     self.attack_range_id.as_deref().and_then(|attack_range_id| ranges.get(attack_range_id))
   }
 }
@@ -514,8 +513,8 @@ pub struct OperatorModule {
   pub description: String,
   pub condition: PromotionAndLevel,
   pub required_trust: u32,
-  pub upgrade_cost: HashMap<String, u32>,
-  pub missions: HashMap<String, OperatorModuleMission>
+  pub upgrade_cost: Map<String, u32>,
+  pub missions: Map<String, OperatorModuleMission>
 }
 
 impl OperatorModule {
@@ -824,7 +823,7 @@ pub struct Building {
 pub struct BuildingUpgrade {
   pub unlock_condition: String,
   /// Materials required to construct/upgrade this building.
-  pub construction_cost: HashMap<String, u32>,
+  pub construction_cost: Map<String, u32>,
   /// Drones required to construct/upgrade this building.
   pub construction_drones: u32,
   /// The amount of power that this building consumes/produces.
@@ -836,7 +835,7 @@ pub struct BuildingUpgrade {
 
 impl BuildingUpgrade {
   #[inline]
-  pub fn iter_construction_cost<'a>(&'a self, items: &'a HashMap<String, Item>) -> ItemsIter<'a> {
+  pub fn iter_construction_cost<'a>(&'a self, items: &'a Map<String, Item>) -> ItemsIter<'a> {
     ItemsIter::new(&self.construction_cost, items)
   }
 }
@@ -954,7 +953,7 @@ impl OperatorFileUnlock {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttackRange {
-  pub points: HashSet<Point2<i32>>
+  pub points: Set<Point2<i32>>
 }
 
 impl AttackRange {
@@ -966,19 +965,19 @@ impl AttackRange {
 /// Iterates over [`Item`]s given a list of item IDs.
 #[derive(Debug, Clone)]
 pub struct ItemsIter<'a> {
-  iter: HashMapIter<'a, String, u32>,
-  items: &'a HashMap<String, Item>
+  iter: MapIter<'a, String, u32>,
+  items: &'a Map<String, Item>
 }
 
 impl<'a> ItemsIter<'a> {
   #[inline]
-  pub fn new(list: &'a HashMap<String, u32>, items: &'a HashMap<String, Item>) -> Self {
+  pub fn new(list: &'a Map<String, u32>, items: &'a Map<String, Item>) -> Self {
     ItemsIter { iter: list.iter(), items }
   }
 
   #[inline]
   fn get(
-    items: &'a HashMap<String, Item>,
+    items: &'a Map<String, Item>,
     (id, &count): (&'a String, &'a u32)
   ) -> Option<(&'a Item, u32)> {
     items.get(id).map(|item| (item, count))

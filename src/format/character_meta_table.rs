@@ -10,7 +10,7 @@ impl DataFile for CharacterMetaTable {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub(crate) struct CharacterMetaTable {
+pub(super) struct CharacterMetaTable {
   #[serde(rename = "spCharGroups")]
   sp_char_groups: HashMap<String, Vec<String>>
 }
