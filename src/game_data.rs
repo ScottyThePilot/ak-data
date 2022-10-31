@@ -10,7 +10,7 @@ pub use uord::UOrd;
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::collections::hash_map::Iter as HashMapIter;
-use std::iter::{Chain, Once};
+use std::iter::{Chain, DoubleEndedIterator, Once};
 use std::num::NonZeroU8;
 use std::option::IntoIter as OptionIter;
 use std::ops::Deref;
@@ -38,10 +38,10 @@ pub struct GameData {
   pub ranges: HashMap<String, AttackRange>,
   /// A list of all recruitment tags.
   pub recruitment_tags: HashMap<String, u32>,
-  /// A list of all past, current and future banners according to the game files.
+  /// A list of all past, current and future banners according to the game files, sorted from oldest to newest.
   pub headhunting_banners: Vec<HeadhuntingBanner>,
-  /// A list of all past, current and future events according to the game files.
-  pub events: HashMap<String, Event>
+  /// A list of all past, current and future events according to the game files, sorted from oldest to newest.
+  pub events: Vec<Event>
 }
 
 impl GameData {
@@ -94,40 +94,40 @@ impl GameData {
     })
   }
 
-  /// Returns an iterator over all headhunting banners that have passed.
+  /// Returns an iterator over all headhunting banners that have passed, from oldest to newest.
   #[inline]
-  pub fn iter_past_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> {
+  pub fn iter_past_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> + DoubleEndedIterator {
     self.headhunting_banners.iter().filter(move |banner| banner.is_past(now))
   }
 
-  /// Returns an iterator over all headhunting banners that are currently open.
+  /// Returns an iterator over all headhunting banners that are currently open, from oldest to newest.
   #[inline]
-  pub fn iter_current_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> {
+  pub fn iter_current_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> + DoubleEndedIterator {
     self.headhunting_banners.iter().filter(move |banner| banner.is_current(now))
   }
 
-  /// Returns an iterator over all headhunting banners that have yet to open, usually empty.
+  /// Returns an iterator over all headhunting banners that have yet to open, from oldest to newest.
   #[inline]
-  pub fn iter_future_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> {
+  pub fn iter_future_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> + DoubleEndedIterator {
     self.headhunting_banners.iter().filter(move |banner| banner.is_future(now))
   }
 
-  /// Returns an iterator over all events that have passed.
+  /// Returns an iterator over all events that have passed, from oldest to newest.
   #[inline]
-  pub fn iter_past_events(&self, now: DateTime<Utc>) -> impl Iterator<Item = &Event> {
-    self.events.values().filter(move |banner| banner.is_past(now))
+  pub fn iter_past_events(&self, now: DateTime<Utc>) -> impl Iterator<Item = &Event> + DoubleEndedIterator {
+    self.events.iter().filter(move |banner| banner.is_past(now))
   }
 
-  /// Returns an iterator over all events that are currently open.
+  /// Returns an iterator over all events that are currently open, from oldest to newest.
   #[inline]
-  pub fn iter_current_events(&self, now: DateTime<Utc>) -> impl Iterator<Item = &Event> {
-    self.events.values().filter(move |banner| banner.is_current(now))
+  pub fn iter_current_events(&self, now: DateTime<Utc>) -> impl Iterator<Item = &Event> + DoubleEndedIterator {
+    self.events.iter().filter(move |banner| banner.is_current(now))
   }
 
-  /// Returns an iterator over all events that have yet to open.
+  /// Returns an iterator over all events that have yet to open, from oldest to newest.
   #[inline]
-  pub fn iter_future_events(&self, now: DateTime<Utc>) -> impl Iterator<Item = &Event> {
-    self.events.values().filter(move |banner| banner.is_future(now))
+  pub fn iter_future_events(&self, now: DateTime<Utc>) -> impl Iterator<Item = &Event> + DoubleEndedIterator {
+    self.events.iter().filter(move |banner| banner.is_future(now))
   }
 }
 
@@ -286,13 +286,6 @@ impl OperatorPromotion {
     let min = f(&self.min_attributes);
     let max = f(&self.max_attributes);
     lerp_u32(min, max, self.level_t(level))
-  }
-
-  fn lerp_attribute_f32<F>(&self, level: u32, f: F) -> f32
-  where F: Fn(&OperatorPromotionAttributes) -> f32 {
-    let min = f(&self.min_attributes);
-    let max = f(&self.max_attributes);
-    lerp_f32(min, max, self.level_t(level))
   }
 }
 
@@ -485,8 +478,7 @@ pub struct OperatorTalentPhase {
   /// I don't know what this key does, however I can say the following things about it:
   ///
   /// It currently has only four possible values: `1`, `1+`, `2` and `#`.
-  /// - When it's `1`, it's always on the first talent.
-  /// - When it's `1+`, it's always on the first talent.
+  /// - When it's `1` or `1+`, it's always on the first talent.
   /// - When it's `2`, it's always on the second talent.
   /// - `#` is currently only present on Amiya's "???" talent and on Phantom's "Phantom Mastery" talent.
   ///   There's no discernible pattern here, maybe a "special" talent marker?

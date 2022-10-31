@@ -17,8 +17,8 @@ pub(crate) struct ActivityTable {
 }
 
 impl ActivityTable {
-  pub(super) fn into_events(self) -> HashMap<String, Event> {
-    recollect_map_filter(self.basic_info, ActivityTableBasicInfoEntry::into_event)
+  pub(super) fn into_events(self) -> Vec<Event> {
+    recollect_filter(self.basic_info, |(_, basic_info_entry)| basic_info_entry.into_event())
   }
 }
 

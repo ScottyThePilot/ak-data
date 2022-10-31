@@ -93,22 +93,24 @@ impl DataFiles {
   pub(crate) fn into_game_data(mut self, last_updated: Option<DateTime<Utc>>) -> GameData {
     let alters = self.character_meta_table.into_alters();
     let operators = recollect_filter(self.character_table, |(id, character)| {
-      let operator = character.into_operator(
-        id.clone(),
-        &self.building_data,
-        &self.skill_table,
-        &mut self.handbook_info_table,
-        &mut self.equip_table
-      );
-
-      operator.map(|operator| (id, operator))
+      Some((id.clone(), {
+        character.into_operator(
+          id.clone(),
+          &self.building_data,
+          &self.skill_table,
+          &mut self.handbook_info_table,
+          &mut self.equip_table
+        )?
+      }))
     });
 
     let items = self.item_table.into_items();
     let buildings = self.building_data.into_buildings();
     let ranges = recollect_map(self.range_table, |entry| entry.into_attack_range());
-    let (recruitment_tags, headhunting_banners) = self.gacha_table.into_tags_and_banners();
-    let events = self.activity_table.into_events();
+    let (recruitment_tags, mut headhunting_banners) = self.gacha_table.into_tags_and_banners();
+    let mut events = self.activity_table.into_events();
+    headhunting_banners.sort_unstable_by_key(|banner| banner.open_time);
+    events.sort_unstable_by_key(|event| event.open_time);
 
     GameData {
       last_updated,
@@ -320,9 +322,4 @@ where I: IntoIterator<Item = T>, C: FromIterator<U>, F: FnMut(T) -> Option<U> {
 fn recollect_filter<T, U, I, C, F>(i: I, f: F) -> C
 where I: IntoIterator<Item = T>, C: FromIterator<U>, F: FnMut(T) -> Option<U> {
   i.into_iter().filter_map(f).collect()
-}
-
-fn recollect_map_filter<K, V, W, I, C, F>(i: I, mut f: F) -> C
-where I: IntoIterator<Item = (K, V)>, C: FromIterator<(K, W)>, F: FnMut(V) -> Option<W> {
-  i.into_iter().filter_map(move |(k, v)| Some((k, f(v)?))).collect()
 }
