@@ -5,16 +5,17 @@
 
 use chrono::{DateTime, Utc};
 use mint::Point2;
+#[doc(no_inline)]
 pub use uord::UOrd;
 
 use std::cmp::Ordering;
 use std::iter::{Chain, DoubleEndedIterator, Once};
 use std::num::NonZeroU8;
 use std::option::IntoIter as OptionIter;
-use std::ops::Deref;
+use std::ops::{Add, Deref};
 use std::path::Path;
 
-use crate::{Map, MapIter, Set};
+use crate::{Map, Set};
 use crate::options::Options;
 
 
@@ -63,6 +64,14 @@ impl GameData {
     options.patch_game_data(self).await
   }
 
+  /// Gets the last updated time from the remote repository.
+  /// If that time indicates that this [`GameData`] is out of date, the time is returned.
+  /// Otherwise returns `None`.
+  pub async fn get_outdated(&self, options: &Options) -> Result<Option<DateTime<Utc>>, crate::Error> {
+    let last_updated = options.get_last_updated().await?;
+    Ok(self.is_outdated(last_updated).then(|| last_updated))
+  }
+
   /// Returns true if the given date time is more recent than the update time included in this game data.
   pub fn is_outdated(&self, new_date_time: DateTime<Utc>) -> bool {
     self.last_updated.map_or(true, |last_updated| last_updated < new_date_time)
@@ -93,40 +102,18 @@ impl GameData {
     })
   }
 
-  /// Returns an iterator over all headhunting banners that have passed, from oldest to newest.
-  #[inline]
-  pub fn iter_past_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> + DoubleEndedIterator {
-    self.headhunting_banners.iter().filter(move |banner| banner.is_past(now))
+  /// Returns an iterator over all headhunting banners based on a filter, from oldest to newest.
+  pub fn iter_banners(&self, now: DateTime<Utc>, tense: Tense)
+  -> impl Iterator<Item = &HeadhuntingBanner> + DoubleEndedIterator {
+    let predicate = tense.into_banner_predicate();
+    self.headhunting_banners.iter().filter(move |banner| predicate(banner, now))
   }
 
-  /// Returns an iterator over all headhunting banners that are currently open, from oldest to newest.
-  #[inline]
-  pub fn iter_current_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> + DoubleEndedIterator {
-    self.headhunting_banners.iter().filter(move |banner| banner.is_current(now))
-  }
-
-  /// Returns an iterator over all headhunting banners that have yet to open, from oldest to newest.
-  #[inline]
-  pub fn iter_future_banners(&self, now: DateTime<Utc>) -> impl Iterator<Item = &HeadhuntingBanner> + DoubleEndedIterator {
-    self.headhunting_banners.iter().filter(move |banner| banner.is_future(now))
-  }
-
-  /// Returns an iterator over all events that have passed, from oldest to newest.
-  #[inline]
-  pub fn iter_past_events(&self, now: DateTime<Utc>) -> impl Iterator<Item = &Event> + DoubleEndedIterator {
-    self.events.iter().filter(move |banner| banner.is_past(now))
-  }
-
-  /// Returns an iterator over all events that are currently open, from oldest to newest.
-  #[inline]
-  pub fn iter_current_events(&self, now: DateTime<Utc>) -> impl Iterator<Item = &Event> + DoubleEndedIterator {
-    self.events.iter().filter(move |banner| banner.is_current(now))
-  }
-
-  /// Returns an iterator over all events that have yet to open, from oldest to newest.
-  #[inline]
-  pub fn iter_future_events(&self, now: DateTime<Utc>) -> impl Iterator<Item = &Event> + DoubleEndedIterator {
-    self.events.iter().filter(move |banner| banner.is_future(now))
+  /// Returns an iterator over all events based on a filter, from oldest to newest.
+  pub fn iter_events(&self, now: DateTime<Utc>, tense: Tense)
+  -> impl Iterator<Item = &Event> + DoubleEndedIterator {
+    let predicate = tense.into_event_predicate();
+    self.events.iter().filter(move |event| predicate(event, now))
   }
 }
 
@@ -134,7 +121,7 @@ impl GameData {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Operator {
-  /// This operator's hidden ID.
+  /// This operator's internal ID.
   pub id: String,
   /// This operator's name, region dependent.
   pub name: String,
@@ -146,7 +133,7 @@ pub struct Operator {
   pub team_id: Option<String>,
   /// A three or four letter code that is displayed in the in-game archive screen. (Example: `"LT77"` for Mostima)
   pub display_number: String,
-  /// Appears to be for an 'alternate name' like the Ursus operators' cyrllic names.
+  /// Appears to be for an 'alternate name' like the Ursus operators' cyrillic names.
   /// (On non-EN regions, the appellation will be the operator's name in latin script)
   pub appellation: Option<String>,
   /// Whether this operator is ranged or melee.
@@ -164,7 +151,7 @@ pub struct Operator {
   pub promotions: OperatorPromotions,
   /// The item required to upgrade this operator's potential.
   pub potential_item_id: Option<String>,
-  /// Will almost always be length 5.
+  /// This operator's potential upgrades. Will almost always be length 5.
   /// Exceptions are Savage and any operators without potential.
   pub potential: Vec<OperatorPotential>,
   /// A list of skills and their upgrade phases that this operator can achieve.
@@ -173,21 +160,38 @@ pub struct Operator {
   pub talents: Vec<OperatorTalent>,
   /// The list of non-default modules for this operator.
   pub modules: Vec<OperatorModule>,
+  /// This list of this operator's outfits, including default outfits.
   pub skins: Map<String, OperatorSkin>,
+  /// This skills that this operator can use in the RIIC base.
   pub base_skills: Vec<OperatorBaseSkill>,
+  /// Attributes gained from trust level.
   pub trust_bonus: OperatorTrustAttributes,
+  /// Information from the operator file or archive menus.
   pub file: OperatorFile
 }
 
 impl Operator {
+  /// Retrieves a reference to the [`Item`] associated with this operator's potential item.
   pub fn get_potential_item<'a>(&self, items: &'a Map<String, Item>) -> Option<&'a Item> {
     self.potential_item_id.as_deref().and_then(|item_id| items.get(item_id))
   }
 
-  pub fn iter_default_skins<'a>(&'a self) -> impl Iterator<Item = &'a OperatorSkin> + DoubleEndedIterator {
-    self.promotions.iter().filter_map(|promotion| {
-      promotion.skin_id.as_deref().and_then(|default_skin_id| self.skins.get(default_skin_id))
+  /// Calculates the stats of this operator at the given promotion, level, and trust percentage.
+  /// (Does not account for stat boosts from talents.)
+  pub fn get_attributes(&self, promotion_and_level: PromotionAndLevel, trust: u32) -> Option<OperatorPromotionAttributes> {
+    self.promotions.get_attributes(promotion_and_level).map(|attributes| {
+      attributes + self.trust_bonus.get_trust_level_attributes(trust)
     })
+  }
+
+  /// Iterates over all of this operator's default skins.
+  pub fn iter_default_skins<'a>(&'a self) -> impl Iterator<Item = &'a OperatorSkin> + DoubleEndedIterator {
+    self.promotions.iter().filter_map(|promotion| promotion.get_skin(&self.skins))
+  }
+
+  pub fn iter_recruitment_tags<'a>(&'a self, recruitment_tags: &'a Map<String, u32>)
+  -> impl Iterator<Item = u32> + DoubleEndedIterator + 'a {
+    self.recruitment_tags.iter().filter_map(|tag| recruitment_tags.get(tag).copied())
   }
 }
 
@@ -195,8 +199,11 @@ impl Operator {
 /// The default (none) promotion, elite level 1, and elite level 2.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorPromotions {
+  /// The default (none) promotion level.
   pub none: OperatorPromotion,
+  /// The first (elite 1) promotion level.
   pub elite1: Option<OperatorPromotion>,
+  /// The second (elite 2) promotion level.
   pub elite2: Option<OperatorPromotion>
 }
 
@@ -210,13 +217,14 @@ impl OperatorPromotions {
     }
   }
 
-  /// Returns the stats of this operator at the given promotion and level.
-  /// (Does not account for stat boosts from talents.)
+  /// Calculates the stats of this operator at the given promotion and level.
+  /// (Does not account for stat boosts from talents or stat boosts from trust.)
   pub fn get_attributes(&self, promotion_and_level: PromotionAndLevel) -> Option<OperatorPromotionAttributes> {
     let PromotionAndLevel { promotion, level } = promotion_and_level;
     self.get(promotion).map(|promotion| promotion.get_level_attributes(level))
   }
 
+  /// Returns an iterator over the contained [`OperatorPromotion`]s.
   #[inline]
   pub fn iter(&self) -> OperatorPromotionsIter<&OperatorPromotion> {
     self.into_iter()
@@ -224,6 +232,8 @@ impl OperatorPromotions {
 }
 
 /// Iterates over between 1 and 3 items of type `P`.
+///
+/// Returned by [`OperatorPromotions::iter`].
 pub type OperatorPromotionsIter<P> = Chain<Chain<Once<P>, OptionIter<P>>, OptionIter<P>>;
 
 impl IntoIterator for OperatorPromotions {
@@ -251,25 +261,38 @@ impl<'a> IntoIterator for &'a OperatorPromotions {
 /// An unlockable promotion level for an operator.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorPromotion {
+  /// The ID of the prefab associated with this operator's attack range.
   pub attack_range_id: Option<String>,
+  /// The minimum attributes of this promotion, starting from level 1.
   pub min_attributes: OperatorPromotionAttributes,
+  /// The maximum attributes of this promotion, attainable at level `max_level`.
   pub max_attributes: OperatorPromotionAttributes,
+  /// The maximum level this operator can be upgraded to at this promotion.
   pub max_level: u32,
-  pub upgrade_cost: Map<String, u32>,
+  /// The items required to upgrade to obtain this promotion.
+  pub upgrade_cost: ItemsCost,
   /// The skin unlocked at this promotion level.
   pub skin_id: Option<String>
 }
 
 impl OperatorPromotion {
+  /// Returns an iterator over the [`Item`]s required to obtain this promotion.
   #[inline]
   pub fn iter_upgrade_cost<'a>(&'a self, items: &'a Map<String, Item>) -> ItemsIter<'a> {
     ItemsIter::new(&self.upgrade_cost, items)
   }
 
+  /// Gets the [`AttackRange`] of this operator's promotion, if any.
   pub fn get_attack_range<'a>(&self, ranges: &'a Map<String, AttackRange>) -> Option<&'a AttackRange> {
     self.attack_range_id.as_deref().and_then(|attack_range_id| ranges.get(attack_range_id))
   }
 
+  /// Gets the [`OperatorSkin`] that is unlocked with this promotion level, if any.
+  pub fn get_skin<'a>(&self, skins: &'a Map<String, OperatorSkin>) -> Option<&'a OperatorSkin> {
+    self.skin_id.as_deref().and_then(|skin_id| skins.get(skin_id))
+  }
+
+  /// Calculates the attributes of a specific level within this promotion.
   pub fn get_level_attributes(&self, level: u32) -> OperatorPromotionAttributes {
     OperatorPromotionAttributes {
       level,
@@ -298,7 +321,6 @@ impl OperatorPromotion {
 }
 
 /// Operator attributes associated with an operator promotion.
-#[non_exhaustive]
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct OperatorPromotionAttributes {
   pub level: u32,
@@ -323,6 +345,19 @@ pub struct OperatorPromotionAttributes {
   pub is_frozen_immune: bool
 }
 
+impl Add<OperatorTrustAttributes> for OperatorPromotionAttributes {
+  type Output = OperatorPromotionAttributes;
+
+  fn add(self, trust_attributes: OperatorTrustAttributes) -> Self::Output {
+    OperatorPromotionAttributes {
+      max_hp: self.max_hp + trust_attributes.max_hp,
+      atk: self.atk + trust_attributes.atk,
+      def: self.def + trust_attributes.def,
+      ..self
+    }
+  }
+}
+
 /// Operator attributes associated with an operator's trust level.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorTrustAttributes {
@@ -332,6 +367,7 @@ pub struct OperatorTrustAttributes {
 }
 
 impl OperatorTrustAttributes {
+  /// Calculates attributes for a given trust value.
   pub fn get_trust_level_attributes(&self, trust: u32) -> OperatorTrustAttributes {
     // trust cannot go over 200
     let t = trust.min(200) as f32 / 200.0;
@@ -363,8 +399,8 @@ fn lerp_u32(min: u32, max: u32, t: f32) -> u32 {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorPotential {
   /// Only two values currently appear:
-  /// - `0` which corresponds to stat boosts.
-  /// - `1` which improves a talent.
+  /// - `0`, which corresponds to stat boosts.
+  /// - `1`, which improves a talent.
   pub potential_type: u32,
   pub description: String
 }
@@ -372,6 +408,7 @@ pub struct OperatorPotential {
 /// An operator's skill and all of its upgradeable levels.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct OperatorSkill {
+  /// The internal ID of this operator skill.
   pub id: String,
   pub name: String,
   pub prefab_key: Option<String>,
@@ -389,6 +426,16 @@ impl OperatorSkill {
   pub fn is_unlocked(&self, promotion_and_level: PromotionAndLevel) -> bool {
     self.condition <= promotion_and_level
   }
+
+  /// Returns an iterator over all [`OperatorSkillLevel`]s in this skill, including mastery levels.
+  pub fn iter_levels(&self) -> impl Iterator<Item = &OperatorSkillLevel> {
+    let levels = self.levels.iter();
+    let mastery_levels = self.mastery.iter().flat_map(|mastery_levels| {
+      mastery_levels.iter().map(|mastery| &mastery.level)
+    });
+
+    levels.chain(mastery_levels)
+  }
 }
 
 /// An upgradeable level of an operator's skill.
@@ -405,6 +452,7 @@ pub struct OperatorSkillLevel {
 }
 
 impl OperatorSkillLevel {
+  /// Gets the [`AttackRange`] of this operator's skill level, if any.
   pub fn get_attack_range<'a>(&self, ranges: &'a Map<String, AttackRange>) -> Option<&'a AttackRange> {
     self.attack_range_id.as_deref().and_then(|attack_range_id| ranges.get(attack_range_id))
   }
@@ -418,7 +466,7 @@ impl OperatorSkillLevel {
 pub struct OperatorSkillMastery {
   pub condition: PromotionAndLevel,
   pub upgrade_time: u32,
-  pub upgrade_cost: Map<String, u32>,
+  pub upgrade_cost: ItemsCost,
   pub level: OperatorSkillLevel
 }
 
@@ -432,11 +480,12 @@ impl Deref for OperatorSkillMastery {
 }
 
 impl OperatorSkillMastery {
-  /// Returns whether or not this mastery's promotion and level requirements have been met
+  /// Returns whether or not this mastery's promotion and level requirements have been met.
   pub fn is_unlockable(&self, promotion_and_level: PromotionAndLevel) -> bool {
     self.condition <= promotion_and_level
   }
 
+  /// Returns an iterator over the [`Item`]s required to obtain this mastery upgrade.
   #[inline]
   pub fn iter_upgrade_cost<'a>(&'a self, items: &'a Map<String, Item>) -> ItemsIter<'a> {
     ItemsIter::new(&self.upgrade_cost, items)
@@ -470,7 +519,7 @@ pub struct OperatorTalent {
 }
 
 impl OperatorTalent {
-  /// Provided a promotion, level and potential level, return the respective unlocked talent phase.
+  /// Given a promotion, level and potential level, tries to find the respective unlocked talent phase.
   pub fn get_unlocked(&self, promotion_and_level: PromotionAndLevel, potential: u8) -> Option<&OperatorTalentPhase> {
     self.phases.iter().rev().find(|phase| phase.is_unlocked(promotion_and_level, potential))
   }
@@ -496,10 +545,12 @@ pub struct OperatorTalentPhase {
 }
 
 impl OperatorTalentPhase {
+  /// Returns whether or not this talent phase's promotion, level and potential requirements have been met.
   pub fn is_unlocked(&self, promotion_and_level: PromotionAndLevel, potential: u8) -> bool {
     self.condition <= promotion_and_level && self.required_potential <= potential
   }
 
+  /// Gets the [`AttackRange`] of this operator's talent phase.
   pub fn get_attack_range<'a>(&self, ranges: &'a Map<String, AttackRange>) -> Option<&'a AttackRange> {
     self.attack_range_id.as_deref().and_then(|attack_range_id| ranges.get(attack_range_id))
   }
@@ -508,36 +559,47 @@ impl OperatorTalentPhase {
 /// An unlockable module for an operator. Currently, no operators have more than one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorModule {
+  /// The internal ID of this operator module.
   pub id: String,
   pub name: String,
+  /// Story text accessible after unlocking this module.
   pub description: String,
   pub condition: PromotionAndLevel,
   pub required_trust: u32,
-  pub upgrade_cost: Map<String, u32>,
+  pub upgrade_cost: ItemsCost,
+  /// A list of missions that must be completed before this module can be unlocked.
   pub missions: Map<String, OperatorModuleMission>
 }
 
 impl OperatorModule {
-  /// Returns whether or not this module's promotion and level requirements have been met
+  /// Returns whether or not this module's promotion, level, and trust requirements have been met.
   pub fn is_unlockable(&self, promotion_and_level: PromotionAndLevel, trust: u32) -> bool {
     self.condition <= promotion_and_level && self.required_trust <= trust
   }
+
+  /// Returns an iterator over the [`Item`]s required to obtain this module.
+  #[inline]
+  pub fn iter_upgrade_cost<'a>(&'a self, items: &'a Map<String, Item>) -> ItemsIter<'a> {
+    ItemsIter::new(&self.upgrade_cost, items)
+  }
 }
 
+/// A mission that must be completed in order to unlock an operator module.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorModuleMission {
+  /// A description of the mission requirements.
   pub description: String,
   pub sort: u32
 }
 
 /// An operator's base skill and all of its unlockable phases.
-#[repr(transparent)]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorBaseSkill {
   pub phases: Vec<OperatorBaseSkillPhase>
 }
 
 impl OperatorBaseSkill {
+  /// Given a promotion and level, tries to find the respective unlocked base skill phase.
   pub fn get_unlocked(&self, promotion_and_level: PromotionAndLevel) -> Option<&OperatorBaseSkillPhase> {
     self.phases.iter().rev().find(|phase| phase.is_unlocked(promotion_and_level))
   }
@@ -554,11 +616,13 @@ pub struct OperatorBaseSkillPhase {
 }
 
 impl OperatorBaseSkillPhase {
+  /// Returns whether or not this base skill phase's promotion and level requirements have been met.
   pub fn is_unlocked(&self, promotion_and_level: PromotionAndLevel) -> bool {
     self.condition <= promotion_and_level
   }
 }
 
+/// The category of an operator's base skill.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum OperatorBaseSkillCategory {
@@ -567,12 +631,17 @@ pub enum OperatorBaseSkillCategory {
   Output
 }
 
+/// An operator equippable outfit.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorSkin {
+  /// The internal ID of this operator skin.
   pub id: String,
   pub name: Option<String>,
+  /// The ID of the operator to whom this skin belongs.
   pub model_id: String,
+  /// The name of the operator to whom this skin belongs.
   pub model_name: String,
+  /// Whether or not this skin costs originite prime.
   pub is_paid: bool,
   pub illustration_id: String,
   pub illustration_live_id: Option<String>,
@@ -620,8 +689,11 @@ impl Ord for PromotionAndLevel {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum Promotion {
+  /// The default (none) promotion level.
   None = 0,
+  /// The first (elite 1) promotion level.
   Elite1 = 1,
+  /// The second (elite 2) promotion level.
   Elite2 = 2
 }
 
@@ -715,13 +787,113 @@ pub enum SubProfession {
   Swordmaster
 }
 
+impl SubProfession {
+  /// Gets the [`Profession`] that this [`SubProfession`] belongs to.
+  pub fn to_profession(self) -> Profession {
+    match self {
+      // Casters
+      Self::BlastCaster => Profession::Caster,
+      Self::ChainCaster => Profession::Caster,
+      Self::CoreCaster => Profession::Caster,
+      Self::MechAccordCaster => Profession::Caster,
+      Self::MysticCaster => Profession::Caster,
+      Self::PhalanxCaster => Profession::Caster,
+      Self::SplashCaster => Profession::Caster,
+      // Medics
+      Self::Therapist => Profession::Medic,
+      Self::Medic => Profession::Medic,
+      Self::MultiTargetMedic => Profession::Medic,
+      Self::WanderingMedic => Profession::Medic,
+      // Vanguards
+      Self::StandardBearer => Profession::Vanguard,
+      Self::Charger => Profession::Vanguard,
+      Self::Pioneer => Profession::Vanguard,
+      Self::Tactician => Profession::Vanguard,
+      // Snipers
+      Self::Artilleryman => Profession::Sniper,
+      Self::Flinger => Profession::Sniper,
+      Self::Heavyshooter => Profession::Sniper,
+      Self::Marksman => Profession::Sniper,
+      Self::Deadeye => Profession::Sniper,
+      Self::Spreadshooter => Profession::Sniper,
+      Self::Besieger => Profession::Sniper,
+      // Specialists
+      Self::Dollkeeper => Profession::Specialist,
+      Self::Executor => Profession::Specialist,
+      Self::Geek => Profession::Specialist,
+      Self::Hookmaster => Profession::Specialist,
+      Self::Merchant => Profession::Specialist,
+      Self::PushStroker => Profession::Specialist,
+      Self::Ambusher => Profession::Specialist,
+      Self::Trapmaster => Profession::Specialist,
+      // Supports
+      Self::Bard => Profession::Support,
+      Self::Abjurer => Profession::Support,
+      Self::Artificer => Profession::Support,
+      Self::DecelBinder => Profession::Support,
+      Self::Summoner => Profession::Support,
+      Self::Hexer => Profession::Support,
+      // Tanks
+      Self::ArtsProtector => Profession::Tank,
+      Self::Duelist => Profession::Tank,
+      Self::Fortress => Profession::Tank,
+      Self::Guardian => Profession::Tank,
+      Self::Protector => Profession::Tank,
+      Self::Juggernaut => Profession::Tank,
+      // Guards
+      Self::ArtsFighter => Profession::Guard,
+      Self::Centurion => Profession::Guard,
+      Self::Dreadnought => Profession::Guard,
+      Self::Fighter => Profession::Guard,
+      Self::Instructor => Profession::Guard,
+      Self::Liberator => Profession::Guard,
+      Self::Lord => Profession::Guard,
+      Self::Musha => Profession::Guard,
+      Self::Reaper => Profession::Guard,
+      Self::Swordmaster => Profession::Guard
+    }
+  }
+}
+
+/// Past, current or future. Used for filtering events and headhunting banners.
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub enum Tense {
+  Past,
+  Current,
+  Future
+}
+
+impl Tense {
+  const fn into_banner_predicate(self) -> fn(&HeadhuntingBanner, DateTime<Utc>) -> bool {
+    match self {
+      Tense::Past => HeadhuntingBanner::is_past,
+      Tense::Current => HeadhuntingBanner::is_current,
+      Tense::Future => HeadhuntingBanner::is_future
+    }
+  }
+
+  const fn into_event_predicate(self) -> fn(&Event, DateTime<Utc>) -> bool {
+    match self {
+      Tense::Past => Event::is_past,
+      Tense::Current => Event::is_current,
+      Tense::Future => Event::is_future
+    }
+  }
+}
+
+/// A playable in-game event.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Event {
+  /// The internal ID of this event.
   pub id: String,
   pub name: String,
   pub event_type: EventType,
+  /// The time this event starts.
   pub open_time: DateTime<Utc>,
+  /// The time the levels on this event close.
   pub close_time: DateTime<Utc>,
+  /// The time the shop on this event closes.
   pub close_time_rewards: DateTime<Utc>,
   pub is_rerun: bool
 }
@@ -738,7 +910,7 @@ impl Event {
   }
 
   /// Whether this event is currently open.
-  /// This includes the extra phase after an event ends when the shop is still accessable.
+  /// This includes the extra phase after an event ends when the shop is still accessible.
   pub fn is_current(&self, now: DateTime<Utc>) -> bool {
     self.open_time <= now && now < self.close_time_rewards
   }
@@ -749,6 +921,7 @@ impl Event {
   }
 }
 
+/// A playable in-game event's categorization.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum EventType {
@@ -756,21 +929,25 @@ pub enum EventType {
   Intermezzi,
   /// For example: Maria Nearl, Guide Ahead.
   SideStory,
+  /// Also known as "Story Collections" or "Omnibus Events".
   /// For example: Children of Ursus, Vigilo.
   Vignette
 }
 
-/// A headhunting banner that existed or will exist at some point according to the game data.
+/// A headhunting banner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct HeadhuntingBanner {
+  /// The internal ID of this headhunting banner.
   pub id: String,
   pub name: String,
   /// A string describing the time that this banner closes.
   pub summary: String,
   pub index: u32,
+  /// The time this banner opens.
   pub open_time: DateTime<Utc>,
+  /// The time this banner closes.
   pub close_time: DateTime<Utc>,
-  /// The ID of the 'Headhunting Data Contract' item (free 10-pull item)
+  /// The ID of the 'Headhunting Data Contract' item (free 10-pull item).
   /// associated with this banner, if it has one.
   pub item_id: Option<String>,
   pub banner_type: HeadhuntingBannerType
@@ -791,11 +968,18 @@ impl HeadhuntingBanner {
   pub fn is_future(&self, now: DateTime<Utc>) -> bool {
     self.open_time > now
   }
+
+  /// Gets the [`Item`] of the 'Headhunting Data Contract' item associated with this banner, if any.
+  pub fn get_item<'a>(&self, items: &'a Map<String, Item>) -> Option<&'a Item> {
+    self.item_id.as_deref().and_then(|item_id| items.get(item_id))
+  }
 }
 
+/// A headhunting banner's categorization.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum HeadhuntingBannerType {
+  /// A typical event banner.
   Normal,
   /// Limited event banners.
   Limited,
@@ -813,7 +997,7 @@ pub struct Building {
   pub description: Option<String>,
   pub max_count: Option<u32>,
   pub category: String,
-  /// Size of this room in (width, height)
+  /// Size of this room in (width, height).
   pub size: (u32, u32),
   pub upgrades: Vec<BuildingUpgrade>
 }
@@ -823,7 +1007,7 @@ pub struct Building {
 pub struct BuildingUpgrade {
   pub unlock_condition: String,
   /// Materials required to construct/upgrade this building.
-  pub construction_cost: Map<String, u32>,
+  pub construction_cost: ItemsCost,
   /// Drones required to construct/upgrade this building.
   pub construction_drones: u32,
   /// The amount of power that this building consumes/produces.
@@ -834,12 +1018,14 @@ pub struct BuildingUpgrade {
 }
 
 impl BuildingUpgrade {
+  /// Returns an iterator over the [`Item`]s required to obtain this upgrade.
   #[inline]
   pub fn iter_construction_cost<'a>(&'a self, items: &'a Map<String, Item>) -> ItemsIter<'a> {
     ItemsIter::new(&self.construction_cost, items)
   }
 }
 
+/// An RIIC base building's categorization.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum BuildingType {
@@ -856,9 +1042,14 @@ pub enum BuildingType {
   Corridor
 }
 
+/// A map of item IDs and counts.
+/// Usually represents the total resource cost of an upgrade or unlockable.
+pub type ItemsCost = Map<String, u32>;
+
 /// An item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Item {
+  /// The internal ID of this item.
   pub id: String,
   pub name: String,
   pub description: Option<String>,
@@ -869,6 +1060,7 @@ pub struct Item {
   pub item_type: String
 }
 
+/// An item's categorization.
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum ItemClass {
@@ -881,11 +1073,50 @@ pub enum ItemClass {
 /// Contains operator file entries.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorFile {
-  pub id: String,
+  /// The ID of the operator to whom this file belongs.
+  pub operator_id: String,
+  /// The artist credited for this operator, according to the game files.
+  ///
+  /// Hypergryph sometimes doesn't list the real illustrators, so this might not always be the true illustrator.
   pub illustrator_name: String,
   pub entries: Vec<OperatorFileEntry>
 }
 
+impl OperatorFile {
+  /// Returns an iterator over all contained [`OperatorFileEntry`]s.
+  #[inline]
+  pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter {
+    self.into_iter()
+  }
+
+  /// Returns an iterator over all [`OperatorFileEntry`] that are unlocked.
+  pub fn iter_unlocked(&self, promotion_and_level: PromotionAndLevel, trust: u32)
+  -> impl Iterator<Item = &OperatorFileEntry> + DoubleEndedIterator {
+    self.into_iter().filter(move |file_entry| file_entry.is_unlocked(promotion_and_level, trust))
+  }
+}
+
+impl IntoIterator for OperatorFile {
+  type Item = OperatorFileEntry;
+  type IntoIter = <Vec<OperatorFileEntry> as IntoIterator>::IntoIter;
+
+  #[inline]
+  fn into_iter(self) -> Self::IntoIter {
+    self.entries.into_iter()
+  }
+}
+
+impl<'a> IntoIterator for &'a OperatorFile {
+  type Item = &'a OperatorFileEntry;
+  type IntoIter = <&'a [OperatorFileEntry] as IntoIterator>::IntoIter;
+
+  #[inline]
+  fn into_iter(self) -> Self::IntoIter {
+    self.entries.iter()
+  }
+}
+
+/// A single entry in the operator's file.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OperatorFileEntry {
   pub title: String,
@@ -894,6 +1125,7 @@ pub struct OperatorFileEntry {
 }
 
 impl OperatorFileEntry {
+  /// Returns an iterator over every line in this file entry.
   #[inline]
   fn iter_text_lines(&self) -> impl Iterator<Item = &str> + DoubleEndedIterator {
     self.text.lines().map(str::trim).filter(|line| !line.is_empty())
@@ -918,6 +1150,8 @@ impl OperatorFileEntry {
     })
   }
 
+  /// Returns whether or not this operator file entry's unlock conditions have been met,
+  /// with the exception of the `OperatorUnlocked` condition.
   pub fn is_unlocked(&self, promotion_and_level: PromotionAndLevel, trust: u32) -> bool {
     self.unlock_condition.test(promotion_and_level, trust)
   }
@@ -928,12 +1162,16 @@ fn split_text_line(line: &str) -> Option<(&str, &str)> {
   line.strip_prefix("[")?.split_once("] ")
 }
 
-/// The unlock condition associated with an operator file.
+/// The unlock condition associated with an operator file entry.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum OperatorFileUnlock {
+  /// This file entry is always unlocked.
   AlwaysUnlocked,
+  /// This file entry unlocks after reaching this amount of trust.
   Trust(u32),
+  /// This file entry unlocks after reaching this promotion and level.
   PromotionLevel(PromotionAndLevel),
+  /// This file entry unlocks if the player another given operator.
   OperatorUnlocked(String)
 }
 
@@ -951,27 +1189,55 @@ impl OperatorFileUnlock {
   }
 }
 
+/// The set of grid tiles that an operator can attack.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AttackRange {
   pub points: Set<Point2<i32>>
 }
 
 impl AttackRange {
+  /// Returns whether or not this attack range includes a given grid tile.
   pub fn contains(&self, point: impl Into<Point2<i32>>) -> bool {
     self.points.contains(&point.into())
+  }
+
+  /// Returns an iterator over all of the contained grid tiles.
+  #[inline]
+  pub fn iter(&self) -> <&Self as IntoIterator>::IntoIter {
+    self.into_iter()
+  }
+}
+
+impl IntoIterator for AttackRange {
+  type Item = Point2<i32>;
+  type IntoIter = <Set<Point2<i32>> as IntoIterator>::IntoIter;
+
+  #[inline]
+  fn into_iter(self) -> Self::IntoIter {
+    self.points.into_iter()
+  }
+}
+
+impl<'a> IntoIterator for &'a AttackRange {
+  type Item = &'a Point2<i32>;
+  type IntoIter = <&'a Set<Point2<i32>> as IntoIterator>::IntoIter;
+
+  #[inline]
+  fn into_iter(self) -> Self::IntoIter {
+    self.points.iter()
   }
 }
 
 /// Iterates over [`Item`]s given a list of item IDs.
 #[derive(Debug, Clone)]
 pub struct ItemsIter<'a> {
-  iter: MapIter<'a, String, u32>,
+  iter: <&'a ItemsCost as IntoIterator>::IntoIter,
   items: &'a Map<String, Item>
 }
 
 impl<'a> ItemsIter<'a> {
   #[inline]
-  pub fn new(list: &'a Map<String, u32>, items: &'a Map<String, Item>) -> Self {
+  pub fn new(list: &'a ItemsCost, items: &'a Map<String, Item>) -> Self {
     ItemsIter { iter: list.iter(), items }
   }
 

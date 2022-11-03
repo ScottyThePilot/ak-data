@@ -25,7 +25,6 @@ pub use crate::options::{Options, Region};
 
 pub(crate) type Map<K, V> = std::collections::BTreeMap<K, V>;
 pub(crate) type Set<T> = std::collections::BTreeSet<T>;
-pub(crate) type MapIter<'a, K, V> = <&'a Map<K, V> as IntoIterator>::IntoIter;
 
 #[derive(Debug, Error)]
 pub enum Error {
@@ -39,8 +38,8 @@ pub enum Error {
   JsonError(#[from] serde_json::Error),
   #[error(transparent)]
   IoError(#[from] std::io::Error),
-  #[error("cannot find update time")]
   /// Returned when `ak-data` cannot find a commit entry with
   /// a valid date within the first request page from GitHub.
+  #[error("cannot find update time")]
   CannotFindUpdateTime
 }

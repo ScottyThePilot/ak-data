@@ -36,7 +36,7 @@ struct HandbookInfoTableEntry {
 impl HandbookInfoTableEntry {
   fn into_operator_file(self) -> OperatorFile {
     OperatorFile {
-      id: self.char_id,
+      operator_id: self.char_id,
       illustrator_name: self.illustrator_name,
       entries: recollect(self.story_entries, HandbookStoryEntry::into_operator_file_entry)
     }
