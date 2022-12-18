@@ -35,7 +35,7 @@ use std::path::Path;
 
 
 
-macro_rules! struct_from_tuple {
+macro_rules! datafiles {
   ($(#[$attr:meta])* $sv:vis struct $Ident:ident {
     $($fv:vis $field:ident: $Field:ty),* $(,)?
   }) => {
@@ -44,14 +44,18 @@ macro_rules! struct_from_tuple {
     }
 
     impl $Ident {
-      fn from_tuple(($($field,)*): ($($Field,)*)) -> Self {
-        $Ident { $($field,)* }
+      $sv async fn from_local(gamedata_dir: &Path) -> Result<Self, $crate::Error> {
+        Ok($Ident { $($field: $crate::options::get_data_file_local::<$Field>(gamedata_dir).await?,)* })
+      }
+
+      $sv async fn from_remote(options: &Options) -> Result<Self, $crate::Error> {
+        Ok($Ident { $($field: $crate::options::get_data_file_remote::<$Field>(options).await?,)* })
       }
     }
   };
 }
 
-struct_from_tuple! {
+datafiles! {
   #[derive(Debug)]
   pub(crate) struct DataFiles {
     activity_table: ActivityTable,
@@ -69,38 +73,6 @@ struct_from_tuple! {
 }
 
 impl DataFiles {
-  pub(crate) async fn from_local(gamedata_dir: &Path) -> Result<Self, crate::Error> {
-    tokio::try_join!(
-      crate::options::get_data_file_local::<ActivityTable>(gamedata_dir),
-      crate::options::get_data_file_local::<BuildingData>(gamedata_dir),
-      crate::options::get_data_file_local::<CharacterMetaTable>(gamedata_dir),
-      crate::options::get_data_file_local::<CharacterTable>(gamedata_dir),
-      crate::options::get_data_file_local::<EquipTable>(gamedata_dir),
-      crate::options::get_data_file_local::<GachaTable>(gamedata_dir),
-      crate::options::get_data_file_local::<HandbookInfoTable>(gamedata_dir),
-      crate::options::get_data_file_local::<ItemTable>(gamedata_dir),
-      crate::options::get_data_file_local::<RangeTable>(gamedata_dir),
-      crate::options::get_data_file_local::<SkillTable>(gamedata_dir),
-      crate::options::get_data_file_local::<SkinTable>(gamedata_dir)
-    ).map(Self::from_tuple)
-  }
-
-  pub(crate) async fn from_remote(options: &Options) -> Result<Self, crate::Error> {
-    tokio::try_join!(
-      crate::options::get_data_file_remote::<ActivityTable>(options),
-      crate::options::get_data_file_remote::<BuildingData>(options),
-      crate::options::get_data_file_remote::<CharacterMetaTable>(options),
-      crate::options::get_data_file_remote::<CharacterTable>(options),
-      crate::options::get_data_file_remote::<EquipTable>(options),
-      crate::options::get_data_file_remote::<GachaTable>(options),
-      crate::options::get_data_file_remote::<HandbookInfoTable>(options),
-      crate::options::get_data_file_remote::<ItemTable>(options),
-      crate::options::get_data_file_remote::<RangeTable>(options),
-      crate::options::get_data_file_remote::<SkillTable>(options),
-      crate::options::get_data_file_remote::<SkinTable>(options)
-    ).map(Self::from_tuple)
-  }
-
   pub(crate) fn into_game_data(mut self, last_updated: Option<DateTime<Utc>>) -> GameData {
     let alters = self.character_meta_table.into_alters();
     let mut skin_table_mapped = self.skin_table.into_skin_table_mapped();
