@@ -68,10 +68,7 @@ impl CharacterTableEntry {
     let sub_profession = self.sub_profession.into_sub_profession()?;
     let position = self.position.into_position()?;
 
-    let skin_table_entry = match data.skin_table.take_character_entry(&id) {
-      Some(skin_table_entry) => skin_table_entry,
-      None => { println!("{} discarded", self.name); return None }
-    };
+    let skin_table_entry = data.skin_table.take_character_entry(&id)?;
 
     let mut promotions = self.phases.into_iter()
       .zip(skin_table_entry.default_skins.into_iter())
